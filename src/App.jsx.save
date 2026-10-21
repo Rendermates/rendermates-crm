@@ -1,0 +1,1095 @@
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+            <button
+              onClick={() => setFilterStage('all')}
+              style={{
+                padding: '8px 16px',
+                borderRadius: '20px',
+                border: '1px solid',
+                borderColor: filterStage === 'all' ? '#0284c7' : '#cbd5e1',
+                background: filterStage === 'all' ? '#0284c7' : '#ffffff',
+                color: filterStage === 'all' ? '#ffffff' : '#475569',
+                fontWeight: '700',
+                fontSize: '13px',
+                cursor: 'pointer'
+              }}
+            >
+              All Stages ({jobs.length})
+            </button>
+            {STAGES.map(s => {
+              const count = jobs.filter(j => j.status === s.id).length;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => setFilterStage(s.id)}
+                  style={{
+                    padding: '8px 16px',
+                    borderRadius: '20px',
+                    border: '1px solid',
+                    borderColor: filterStage === s.id ? s.color : '#cbd5e1',
+                    background: filterStage === s.id ? s.bg : '#ffffff',
+                    color: filterStage === s.id ? s.color : '#475569',
+                    fontWeight: '700',
+                    fontSize: '13px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  {s.label} ({count})
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+            {filteredJobs.length === 0 ? (
+              <div style={{ gridColumn: '1 / -1', background: '#ffffff', borderRadius: '12px', padding: '48px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
+                <Briefcase size={40} style={{ margin: '0 auto 12px auto' }} />
+                <h3 style={{ margin: 0, color: '#475569' }}>No jobs match current filter</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Change your stage or source filter above, or click "+ New Job".</p>
+              </div>
+            ) : (
+              filteredJobs.map(job => {
+                const jExtras = (job.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
+                const jContract = (Number(job.contractAmount) || 0) + jExtras;
+                const jPaid = (job.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
+                const jRemaining = jContract - jPaid;
+                const jStage = STAGES.find(s => s.id === job.status) || STAGES[0];
+                const jSource = LEAD_SOURCES.find(src => src.id === (job.source || 'website')) || LEAD_SOURCES[0];
+                const SourceIcon = jSource.icon;
+                const jPendingExtras = (job.extras || []).filter(x => !x.invoiced);
+
+                return (
+                  <div
+                    key={job.id}
+                    onClick={() => { setSelectedJobId(job.id); setActiveTab('site_visit'); }}
+                    style={{
+                      background: '#ffffff',
+                      borderRadius: '14px',
+                      padding: '20px',
+                      border: '1px solid #e2e8f0',
+                      boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
+                      cursor: 'pointer',
+                      transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease'
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'translateY(-2px)';
+                      e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.08)';
+                      e.currentTarget.style.borderColor = '#0284c7';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.04)';
+                      e.currentTarget.style.borderColor = '#e2e8f0';
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                      <div>
+                        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>{job.clientName}</h2>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: jSource.bg, color: jSource.color, padding: '2px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', marginTop: '4px' }}>
+                          <SourceIcon size={11} color={jSource.color} /> {jSource.label}
+                        </span>
+                      </div>
+                      <span style={{ background: jStage.bg, color: jStage.color, padding: '3px 10px', borderRadius: '12px', fontSize: '11px', fontWeight: '800' }}>
+                        {jStage.label}
+                      </span>
+                    </div>
+
+                    <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '4px' }}>
+                      <MapPin size={14} color="#0284c7" />
+                      <span>{job.address}</span>
+                    </div>
+
+                    {job.phone && (
+                      <div style={{ fontSize: '13px', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px' }}>
+                        <Phone size={14} color="#64748b" />
+                        <span>{job.phone}</span>
+                      </div>
+                    )}
+
+                    {job.startDate && job.endDate ? (
+                      <div style={{ background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '8px', padding: '6px 10px', marginBottom: '10px', fontSize: '12px', color: '#065f46', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Calendar size={13} color="#059669" />
+                        <span>Run: <strong>{job.startDate}</strong> → <strong>{job.endDate}</strong></span>
+                      </div>
+                    ) : job.siteVisitDate && (
+                      <div style={{ background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '8px', padding: '6px 10px', marginBottom: '10px', fontSize: '12px', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Calendar size={13} />
+                        <span>Visit: <strong>{job.siteVisitDate}</strong> at <strong>{job.siteVisitTime || '09:00'}</strong></span>
+                      </div>
+                    )}
+
+                    <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', border: '1px solid #f1f5f9', margin: '10px 0' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
+                        <span style={{ color: '#64748b' }}>Contract: <strong style={{ color: '#0f172a' }}>${jContract.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</strong></span>
+                        <span style={{ color: '#64748b' }}>Paid: <strong style={{ color: '#16a34a' }}>${jPaid.toLocaleString('en-NZ')}</strong></span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700' }}>
+                        <span style={{ color: '#dc2626' }}>Remaining:</span>
+                        <span style={{ color: '#dc2626' }}>${jRemaining.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</span>
+                      </div>
+                      {jPendingExtras.length > 0 && (
+                        <div style={{ marginTop: '6px', fontSize: '11px', color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: '6px', fontWeight: '700' }}>
+                          ⚡ {jPendingExtras.length} variation(s) pending invoice (+${jPendingExtras.reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString('en-NZ')})
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #f1f5f9', fontSize: '12px', color: '#64748b' }}>
+                      <span>System: <strong>{job.system}</strong> {job.sqm ? `(${job.sqm} m²)` : ''}</span>
+                      <span style={{ color: '#0284c7', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '2px' }}>
+                        Open Workspace <ChevronRight size={14} />
+                      </span>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* 3. LEAD SOURCES TRACKER POR ÚLTIMO LÁ EM BAIXO */}
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', marginTop: '24px', marginBottom: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
+            <div 
+              onClick={() => setIsLeadTrackerOpen(!isLeadTrackerOpen)}
+              style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '14px 20px', cursor: 'pointer', background: isLeadTrackerOpen ? '#f8fafc' : '#ffffff', transition: 'background 0.2s ease' }}
+            >
+              <span style={{ fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Globe size={14} color="#0284c7" /> Lead Sources Tracker (Website & Channels)
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>Total Leads: <strong>{jobs.length}</strong></span>
+                {isLeadTrackerOpen ? <ChevronUp size={16} color="#64748b" /> : <ChevronDown size={16} color="#64748b" />}
+              </div>
+            </div>
+            
+            {isLeadTrackerOpen && (
+              <div style={{ padding: '14px 20px', borderTop: '1px solid #e2e8f0', display: 'flex', gap: '8px', flexWrap: 'wrap', background: '#ffffff' }}>
+                <button
+                  onClick={() => setFilterSource('all')}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: '16px',
+                    border: filterSource === 'all' ? '2px solid #0284c7' : '1px solid #e2e8f0',
+                    background: filterSource === 'all' ? '#e0f2fe' : '#f8fafc',
+                    color: filterSource === 'all' ? '#0284c7' : '#475569',
+                    fontWeight: '700',
+                    fontSize: '12px',
+                    cursor: 'pointer'
+                  }}
+                >
+                  All Sources ({jobs.length})
+                </button>
+                {LEAD_SOURCES.map(source => {
+                  const count = jobs.filter(j => (j.source || 'website') === source.id).length;
+                  const IconComponent = source.icon;
+                  return (
+                    <button
+                      key={source.id}
+                      onClick={() => setFilterSource(source.id)}
+                      style={{
+                        padding: '6px 12px',
+                        borderRadius: '16px',
+                        border: filterSource === source.id ? `2px solid ${source.color}` : '1px solid #e2e8f0',
+                        background: filterSource === source.id ? source.bg : '#ffffff',
+                        color: filterSource === source.id ? source.color : '#475569',
+                        fontWeight: '700',
+                        fontSize: '12px',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '5px'
+                      }}
+                    >
+                      <IconComponent size={13} color={source.color} />
+                      {source.label}: <strong>{count}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+        </div>
+      ) : (
+        <div style={{ padding: '24px', maxWidth: '1140px', margin: '0 auto' }}>
+          
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+            <button
+              onClick={() => setSelectedJobId(null)}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#ffffff', border: '1px solid #cbd5e1', color: '#475569', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '13px' }}
+            >
+              <ArrowLeft size={16} /> All Jobs
+            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>Unique Client File: #{selectedJob.id.slice(-6)}</span>
+              <button 
+                onClick={() => handleDeleteJob(selectedJob.id)}
+                style={{ background: '#fef2f2', color: '#dc2626', border: '1px solid #fecaca', padding: '6px 10px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: '700' }}
+              >
+                <Trash2 size={14} /> Delete Job
+              </button>
+            </div>
+          </div>
+
+          <div style={{ background: '#ffffff', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '20px' }}>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '11px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.06em', color: '#0284c7' }}>
+                    Project Workspace
+                  </span>
+                  {(() => {
+                    const src = LEAD_SOURCES.find(s => s.id === (selectedJob.source || 'website')) || LEAD_SOURCES[0];
+                    const SrcIcon = src.icon;
+                    return (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: src.bg, color: src.color, padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: '800' }}>
+                        <SrcIcon size={12} color={src.color} /> {src.label}
+                      </span>
+                    );
+                  })()}
+                </div>
+
+                <h1 style={{ margin: '4px 0 8px 0', fontSize: '26px', fontWeight: '800', color: '#0f172a' }}>
+                  {selectedJob.clientName}
+                </h1>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '14px', color: '#475569' }}>
+                  <a
+                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedJob.address)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0284c7', textDecoration: 'none', fontWeight: '600' }}
+                  >
+                    <Compass size={15} /> Google Maps
+                  </a>
+                  <a
+                    href={`https://maps.apple.com/?q=${encodeURIComponent(selectedJob.address)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#64748b', textDecoration: 'none' }}
+                  >
+                    <MapPin size={15} /> Apple Maps
+                  </a>
+                  {selectedJob.phone && (
+                    <a href={`tel:${selectedJob.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0f172a', textDecoration: 'none' }}>
+                      <Phone size={15} color="#64748b" /> {selectedJob.phone}
+                    </a>
+                  )}
+                  <span>System: <strong>{selectedJob.system}</strong></span>
+                  {selectedJob.sqm > 0 && <span><strong>{selectedJob.sqm} m²</strong></span>}
+                </div>
+              </div>
+
+              <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'right' }}>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700' }}>TOTAL CONTRACT (EXCL. GST)</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a' }}>${totalContractExclGst.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</div>
+                <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: '600' }}>
+                  Paid: ${totalPaid.toLocaleString('en-NZ')} ({percentPaid}%) • Unpaid: <span style={{ color: '#dc2626' }}>${remainingUnpaid.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</span>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
+                Sales Funnel & Stage (Click to advance)
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '8px' }}>
+                {STAGES.map((s, idx) => {
+                  const isCurrent = selectedJob.status === s.id;
+                  const currentIndex = STAGES.findIndex(item => item.id === selectedJob.status);
+                  const isPassed = idx < currentIndex;
+
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        handleStageSelect(s.id);
+                        if (s.id === 'site_visit') setActiveTab('site_visit');
+                      }}
+                      style={{
+                        padding: '12px 10px',
+                        borderRadius: '10px',
+                        border: isCurrent ? `2px solid ${s.color}` : '1px solid #e2e8f0',
+                        background: isCurrent ? s.bg : (isPassed ? '#f8fafc' : '#ffffff'),
+                        color: isCurrent ? s.color : (isPassed ? '#334155' : '#64748b'),
+                        fontWeight: '800',
+                        fontSize: '12px',
+                        textAlign: 'center',
+                        cursor: 'pointer',
+                        transition: 'all 0.15s ease',
+                        boxShadow: isCurrent ? `0 2px 6px ${s.color}33` : 'none'
+                      }}
+                    >
+                      <div style={{ fontSize: '10px', opacity: 0.8, marginBottom: '2px' }}>
+                        {isPassed ? '✓ Done' : (isCurrent ? '▶ Current' : `Step ${idx + 1}`)}
+                      </div>
+                      {s.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '6px', borderBottom: '2px solid #e2e8f0', marginBottom: '20px', background: '#ffffff', padding: '6px 12px 0 12px', borderRadius: '12px 12px 0 0', overflowX: 'auto' }}>
+            <button
+              onClick={() => setActiveTab('site_visit')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'site_visit' ? '3px solid #0284c7' : '3px solid transparent',
+                color: activeTab === 'site_visit' ? '#0284c7' : '#64748b',
+                fontWeight: '800',
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <Calendar size={16} /> Schedule, Calendar & Dates {selectedJob.startDate && '✓'}
+            </button>
+            <button
+              onClick={() => setActiveTab('claims')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'claims' ? '3px solid #0284c7' : '3px solid transparent',
+                color: activeTab === 'claims' ? '#0284c7' : '#64748b',
+                fontWeight: '800',
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FileText size={16} /> Progress Claims & Invoices ({selectedJob.claims?.length || 0})
+            </button>
+            <button
+              onClick={() => setActiveTab('extras')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'extras' ? '3px solid #0284c7' : '3px solid transparent',
+                color: activeTab === 'extras' ? '#0284c7' : '#64748b',
+                fontWeight: '800',
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <Layers size={16} /> Extras & Variations ({selectedJob.extras?.length || 0})
+            </button>
+            <button
+              onClick={() => setActiveTab('quote')}
+              style={{
+                padding: '12px 20px',
+                background: 'none',
+                border: 'none',
+                borderBottom: activeTab === 'quote' ? '3px solid #0284c7' : '3px solid transparent',
+                color: activeTab === 'quote' ? '#0284c7' : '#64748b',
+                fontWeight: '800',
+                fontSize: '14px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px'
+              }}
+            >
+              <FileCheck size={16} /> Xero Quote & Document
+            </button>
+          </div>
+
+          <div style={{ background: '#ffffff', borderRadius: '0 0 16px 16px', padding: '24px', border: '1px solid #e2e8f0', borderTop: 'none', boxShadow: '0 2px 4px rgba(0,0,0,0.04)' }}>
+            
+            {activeTab === 'site_visit' && (
+              <div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px', marginBottom: '20px' }}>
+                  
+                  <form onSubmit={handleSaveJobDates} style={{ background: '#f8fafc', border: '1.5px solid #0284c7', borderRadius: '14px', padding: '20px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '800', color: '#0284c7', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Calendar size={18} /> Book Project Dates (Execution Run)
+                    </div>
+
+                    <p style={{ margin: '0 0 14px 0', fontSize: '12px', color: '#64748b' }}>
+                      Define start and finish dates to display on the <strong>Annual Calendar</strong> and detect gaps between jobs.
+                    </p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '14px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Project Start Date</label>
+                        <input
+                          type="date"
+                          value={jobStartDate}
+                          onChange={(e) => setJobStartDate(e.target.value)}
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Estimated Finish Date</label>
+                        <input
+                          type="date"
+                          value={jobEndDate}
+                          onChange={(e) => setJobEndDate(e.target.value)}
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      style={{ width: '100%', background: '#0284c7', color: '#ffffff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginBottom: '10px' }}
+                    >
+                      Save Booked Dates & Add to Annual Calendar
+                    </button>
+
+                    {selectedJob.startDate && selectedJob.endDate && (
+                      <a
+                        href={generateJobCalendarUrl(selectedJob)}
+                        target="_blank"
+                        rel="noreferrer"
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          background: '#059669',
+                          color: '#ffffff',
+                          textDecoration: 'none',
+                          padding: '10px',
+                          borderRadius: '8px',
+                          fontWeight: '800',
+                          fontSize: '12px'
+                        }}
+                      >
+                        <Calendar size={14} /> Add Scheduled Project to Google Calendar
+                      </a>
+                    )}
+                  </form>
+
+                  <form onSubmit={handleSaveSiteVisit} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '20px' }}>
+                    <div style={{ fontSize: '15px', fontWeight: '800', color: '#0f172a', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Compass size={18} color="#0284c7" /> Site Inspection / Visit
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '10px', marginBottom: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Visit Date</label>
+                        <input
+                          type="date"
+                          value={visitDate}
+                          onChange={(e) => setVisitDate(e.target.value)}
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Visit Time</label>
+                        <input
+                          type="time"
+                          value={visitTime}
+                          onChange={(e) => setVisitTime(e.target.value)}
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ marginBottom: '14px' }}>
+                      <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Inspection Notes</label>
+                      <textarea
+                        rows={2}
+                        placeholder="e.g. Check cracking on North elevation..."
+                        value={visitNotes}
+                        onChange={(e) => setVisitNotes(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      style={{ width: '100%', background: '#475569', color: '#ffffff', border: 'none', padding: '10px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginBottom: '8px' }}
+                    >
+                      Save Visit
+                    </button>
+
+                    <a
+                      href={visitDate ? generateGoogleCalendarUrl(selectedJob, visitDate, visitTime, visitNotes) : '#'}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={(e) => {
+                        if (!visitDate) {
+                          e.preventDefault();
+                          alert('Please select a visit date first!');
+                        }
+                      }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        gap: '6px',
+                        background: '#1a73e8',
+                        color: '#ffffff',
+                        textDecoration: 'none',
+                        padding: '10px',
+                        borderRadius: '8px',
+                        fontWeight: '800',
+                        fontSize: '12px'
+                      }}
+                    >
+                      <Calendar size={14} /> Add Visit to Google Calendar
+                    </a>
+                  </form>
+
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'claims' && (
+              <div>
+                <form onSubmit={handleAddClaim} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '22px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a' }}>Record Stage / Progress Claim</div>
+                    
+                    <div style={{ display: 'flex', background: '#e2e8f0', borderRadius: '6px', padding: '2px' }}>
+                      <button
+                        type="button"
+                        onClick={() => setClaimMode('percent')}
+                        style={{ border: 'none', padding: '4px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', background: claimMode === 'percent' ? '#0284c7' : 'transparent', color: claimMode === 'percent' ? '#fff' : '#64748b' }}
+                      >
+                        % Percentage
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setClaimMode('fixed')}
+                        style={{ border: 'none', padding: '4px 12px', borderRadius: '4px', fontSize: '11px', fontWeight: '800', cursor: 'pointer', background: claimMode === 'fixed' ? '#0284c7' : 'transparent', color: claimMode === 'fixed' ? '#fff' : '#64748b' }}
+                      >
+                        $ Fixed Amount
+                      </button>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: claimStageType === 'Custom' ? '1.5fr 1.5fr 1.8fr 1.2fr auto' : '1.8fr 2fr 1.2fr auto', gap: '12px', alignItems: 'center' }}>
+                    <div>
+                      <select
+                        value={claimStageType}
+                        onChange={(e) => setClaimStageType(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', fontWeight: '700', color: '#0f172a' }}
+                      >
+                        <option value="Deposit">Deposit</option>
+                        <option value="Progress Claim 1">Progress Claim 1</option>
+                        <option value="Progress Claim 2">Progress Claim 2</option>
+                        <option value="Progress Claim 3">Progress Claim 3</option>
+                        <option value="Progress Claim 4">Progress Claim 4</option>
+                        <option value="Progress Claim 5">Progress Claim 5</option>
+                        <option value="Final Claim / Handover">Final Claim / Handover</option>
+                        <option value="Custom">Custom Stage Name...</option>
+                      </select>
+                    </div>
+
+                    {claimStageType === 'Custom' && (
+                      <input
+                        type="text"
+                        placeholder="Stage description..."
+                        value={customStageText}
+                        onChange={(e) => setCustomStageText(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                        required
+                      />
+                    )}
+
+                    <div style={{ position: 'relative' }}>
+                      <input
+                        type="number"
+                        step="any"
+                        placeholder={claimMode === 'percent' ? '% e.g. 10' : '$ Amount Excl. GST'}
+                        value={claimInputValue}
+                        onChange={(e) => setClaimInputValue(e.target.value)}
+                        style={{ width: '100%', padding: '10px', paddingRight: claimMode === 'percent' ? '30px' : '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', fontWeight: '700', boxSizing: 'border-box' }}
+                        required
+                      />
+                      {claimMode === 'percent' && (
+                        <span style={{ position: 'absolute', right: '10px', top: '10px', color: '#64748b', fontWeight: '800' }}>%</span>
+                      )}
+                      <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '3px', fontWeight: '700' }}>
+                        {claimMode === 'percent'
+                          ? `= $${(totalContractExclGst * ((parseFloat(claimInputValue) || 0) / 100)).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Excl. GST`
+                          : `= ${totalContractExclGst > 0 ? (((parseFloat(claimInputValue) || 0) / totalContractExclGst) * 100).toFixed(1) : 0}% of Contract`}
+                      </div>
+                    </div>
+
+                    <div>
+                      <input
+                        type="text"
+                        placeholder="Invoice # (Optional)"
+                        value={claimInvoiceNo}
+                        onChange={(e) => setClaimInvoiceNo(e.target.value)}
+                        style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                      />
+                      <span style={{ fontSize: '10px', color: '#94a3b8' }}>Fill now or after Xero</span>
+                    </div>
+
+                    <button
+                      type="submit"
+                      style={{ background: '#0284c7', color: '#ffffff', border: 'none', padding: '11px 18px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    >
+                      + Add Stage
+                    </button>
+                  </div>
+                </form>
+
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                        <th style={{ padding: '12px 16px' }}>Stage</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center' }}>% of Job</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'right' }}>Amount (Excl. GST)</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'right' }}>Incl. 15% GST</th>
+                        <th style={{ padding: '12px 16px' }}>Xero Invoice #</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '12px 16px', width: '36px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {existingClaims.length === 0 ? (
+                        <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No payment stages created yet. Select "Deposit" or "Progress Claim" above to record one.</td></tr>
+                      ) : (
+                        existingClaims.map((claim) => (
+                          <tr key={claim.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                            <td style={{ padding: '14px 16px', fontWeight: '700', color: '#0f172a' }}>
+                              {claim.description}
+                              <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '400' }}>{claim.date}</div>
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'center', color: '#0284c7', fontWeight: '800' }}>
+                              {claim.percentage ? `${claim.percentage}%` : '-'}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: '#0f172a' }}>
+                              ${Number(claim.amount).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', color: '#475569' }}>
+                              ${(Number(claim.amount) * 1.15).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              {editingInvoiceId === claim.id ? (
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                  <input
+                                    type="text"
+                                    value={editingInvoiceVal}
+                                    onChange={(e) => setEditingInvoiceVal(e.target.value)}
+                                    placeholder="INV-0001"
+                                    autoFocus
+                                    style={{ width: '90px', padding: '5px 8px', fontSize: '12px', border: '1px solid #0284c7', borderRadius: '4px' }}
+                                  />
+                                  <button onClick={() => handleSaveInlineInvoiceNo(claim.id)} style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '4px', padding: '5px 8px', fontSize: '11px', cursor: 'pointer', fontWeight: 'bold' }}>✓</button>
+                                </div>
+                              ) : (
+                                <div
+                                  onClick={() => { setEditingInvoiceId(claim.id); setEditingInvoiceVal(claim.invoiceNo === 'Pending' ? '' : claim.invoiceNo); }}
+                                  title="Click to edit or add Invoice #"
+                                  style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', cursor: 'pointer', background: claim.invoiceNo && claim.invoiceNo !== 'Pending' ? '#f1f5f9' : '#fef3c7', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontFamily: 'monospace', color: claim.invoiceNo && claim.invoiceNo !== 'Pending' ? '#0f172a' : '#b45309' }}
+                                >
+                                  <span>{claim.invoiceNo || 'Pending'}</span>
+                                  <Edit2 size={12} color="#64748b" />
+                                </div>
+                              )}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                              <button
+                                onClick={() => handleToggleClaimStatus(claim.id)}
+                                title="Click to cycle: To Invoice → Invoiced → Paid"
+                                style={{
+                                  border: 'none',
+                                  borderRadius: '20px',
+                                  padding: '5px 14px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer',
+                                  background: claim.status === 'Paid' ? '#dcfce7' : (claim.status === 'Invoiced' ? '#ede9fe' : '#fef3c7'),
+                                  color: claim.status === 'Paid' ? '#15803d' : (claim.status === 'Invoiced' ? '#6d28d9' : '#b45309')
+                                }}
+                              >
+                                {claim.status === 'Paid' ? '✓ Paid' : (claim.status === 'Invoiced' ? '📄 Invoiced' : '⏳ To Invoice')}
+                              </button>
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                              <button onClick={() => handleDeleteClaim(claim.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'extras' && (
+              <div>
+                <div style={{ display: 'flex', gap: '14px', marginBottom: '18px', flexWrap: 'wrap' }}>
+                  <div style={{ flex: 1, background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#92400e', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Clock size={16} color="#d97706" />
+                      <span><strong>Pending to Invoice:</strong> {pendingExtras.length} variation(s)</span>
+                    </div>
+                    <strong style={{ fontSize: '15px' }}>
+                      +${pendingExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+
+                  <div style={{ flex: 1, background: '#ecfdf5', border: '1px solid #a7f3d0', borderRadius: '10px', padding: '12px 16px', fontSize: '13px', color: '#065f46', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <CheckCircle2 size={16} color="#059669" />
+                      <span><strong>Already Invoiced:</strong> {invoicedExtras.length} variation(s)</span>
+                    </div>
+                    <strong style={{ fontSize: '15px' }}>
+                      +${invoicedExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                    </strong>
+                  </div>
+                </div>
+
+                <form onSubmit={handleAddExtra} style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '18px', marginBottom: '22px' }}>
+                  <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <PlusCircle size={16} color="#0284c7" /> Quick Add Extra / Cost Variation
+                  </div>
+                  
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    <input 
+                      type="text" 
+                      placeholder="Main Description (e.g. Timber repair, Colour match trip)" 
+                      value={newExtra.description} 
+                      onChange={e => setNewExtra({ ...newExtra, description: e.target.value })} 
+                      style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
+                      required 
+                    />
+                    
+                    <textarea 
+                      placeholder="Detailed Sub-description (Materials used, specific tasks, reason for extra...)" 
+                      rows={2}
+                      value={newExtra.subDescription} 
+                      onChange={e => setNewExtra({ ...newExtra, subDescription: e.target.value })} 
+                      style={{ width: '100%', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }} 
+                    />
+
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Workers</label>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={newExtra.workers} 
+                          onChange={e => {
+                            const w = e.target.value;
+                            const h = newExtra.hours;
+                            const r = newExtra.rate;
+                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
+                            setNewExtra({ ...newExtra, workers: w, amount: amt });
+                          }} 
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Rate ($/hr)</label>
+                        <input 
+                          type="number" 
+                          value={newExtra.rate} 
+                          onChange={e => {
+                            const r = e.target.value;
+                            const w = newExtra.workers;
+                            const h = newExtra.hours;
+                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
+                            setNewExtra({ ...newExtra, rate: r, amount: amt });
+                          }} 
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hours Total</label>
+                        <input 
+                          type="number" 
+                          placeholder="Hrs"
+                          value={newExtra.hours} 
+                          onChange={e => {
+                            const h = e.target.value;
+                            const w = newExtra.workers;
+                            const r = newExtra.rate;
+                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
+                            setNewExtra({ ...newExtra, hours: h, amount: amt });
+                          }} 
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#0f172a', marginBottom: '4px' }}>Total ($ Excl GST)</label>
+                        <input 
+                          type="number" 
+                          step="any"
+                          placeholder="Amount" 
+                          value={newExtra.amount} 
+                          onChange={e => setNewExtra({ ...newExtra, amount: e.target.value })} 
+                          style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', fontWeight: '800', boxSizing: 'border-box' }} 
+                          required 
+                        />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '4px' }}>
+                      <button type="submit" style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}>
+                        + Add Extra
+                      </button>
+                    </div>
+                  </div>
+                </form>
+
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
+                        <th style={{ padding: '12px 16px' }}>Date</th>
+                        <th style={{ padding: '12px 16px' }}>Description of Extra</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'right' }}>Amount (Excl. GST)</th>
+                        <th style={{ padding: '12px 16px', textAlign: 'center' }}>Invoiced to Client?</th>
+                        <th style={{ padding: '12px 16px', width: '40px' }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {extrasList.length === 0 ? (
+                        <tr><td colSpan={5} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No variations or extras recorded yet for this job.</td></tr>
+                      ) : (
+                        extrasList.map((extra) => (
+                          <tr key={extra.id} style={{ borderBottom: '1px solid #f1f5f9', background: extra.invoiced ? '#fafafa' : '#ffffff' }}>
+                            <td style={{ padding: '14px 16px', color: '#64748b' }}>{extra.date}</td>
+                            <td style={{ padding: '14px 16px', color: extra.invoiced ? '#64748b' : '#0f172a' }}>
+                              <div style={{ fontWeight: '700' }}>{extra.description}</div>
+                              {extra.subDescription && (
+                                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{extra.subDescription}</div>
+                              )}
+                              {extra.workers && extra.hours && extra.rate && (
+                                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '600', marginTop: '3px' }}>
+                                  {extra.workers} worker(s) × {extra.hours} hrs @ ${extra.rate}/hr
+                                </div>
+                              )}
+                              {extra.invoiced && (
+                                <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '11px', color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>Already Billed</span>
+                              )}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: extra.invoiced ? '#64748b' : '#0284c7' }}>
+                              +${Number(extra.amount).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'center' }}>
+                              <button
+                                type="button"
+                                onClick={() => handleToggleExtraInvoiced(extra.id)}
+                                title={extra.invoiced ? 'Click to mark as Pending (not yet invoiced)' : 'Click to mark as Invoiced (already charged to client)'}
+                                style={{
+                                  border: 'none',
+                                  borderRadius: '20px',
+                                  padding: '5px 14px',
+                                  fontSize: '11px',
+                                  fontWeight: '800',
+                                  cursor: 'pointer',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: '6px',
+                                  background: extra.invoiced ? '#dcfce7' : '#fef3c7',
+                                  color: extra.invoiced ? '#15803d' : '#b45309'
+                                }}
+                              >
+                                {extra.invoiced ? (<><CheckCircle2 size={13} /> Invoiced</>) : (<><Clock size={13} /> Pending Invoice</>)}
+                              </button>
+                            </td>
+                            <td style={{ padding: '14px 16px', textAlign: 'right' }}>
+                              <button onClick={() => handleDeleteExtra(extra.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
+                                <Trash2 size={16} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'quote' && (
+              <div>
+                <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '12px', padding: '20px', marginBottom: '22px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#4c1d95' }}>Attach or Update Xero Quote PDF</h3>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6d28d9' }}>Drop your exported Xero PDF to auto-read Quote Number & Totals</p>
+                    </div>
+                    {selectedJob.quoteNumber && (
+                      <span style={{ background: '#ede9fe', color: '#6d28d9', padding: '4px 12px', borderRadius: '8px', fontWeight: '800', fontSize: '13px' }}>
+                        Current Quote: #{selectedJob.quoteNumber}
+                      </span>
+                    )}
+                  </div>
+
+                  <form onSubmit={handleSaveQuoteToJob}>
+                    <div
+                      onClick={() => document.getElementById('tab-xero-file-input').click()}
+                      style={{ border: '2px dashed #a78bfa', borderRadius: '10px', padding: '20px', textAlign: 'center', background: '#ffffff', cursor: 'pointer', marginBottom: '14px' }}
+                    >
+                      <FileUp size={32} color="#7c3aed" style={{ margin: '0 auto 6px auto', display: 'block' }} />
+                      <div style={{ fontSize: '13px', fontWeight: '800', color: '#4c1d95' }}>
+                        {isProcessingPdf ? 'Reading PDF...' : 'Click to select or drop Xero Quote PDF'}
+                      </div>
+                      {quoteData.fileName && (
+                        <div style={{ marginTop: '8px', display: 'inline-block', background: '#ede9fe', color: '#6d28d9', padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: '700' }}>
+                          ✓ Selected: {quoteData.fileName}
+                        </div>
+                      )}
+                      <input id="tab-xero-file-input" type="file" accept=".pdf" style={{ display: 'none' }} onChange={(e) => handlePdfUpload(e.target.files[0])} />
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '10px', alignItems: 'flex-end' }}>
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Quote #</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. QU000647"
+                          value={quoteData.quoteNumber || selectedJob.quoteNumber || ''}
+                          onChange={(e) => setQuoteData({ ...quoteData, quoteNumber: e.target.value })}
+                          style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#0f172a', marginBottom: '4px' }}>Subtotal Excl. GST ($) *</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={quoteData.amountExclGst || selectedJob.contractAmount || ''}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const num = parseFloat(val);
+                            setQuoteData({ ...quoteData, amountExclGst: val, amountIncGst: !isNaN(num) ? (num * 1.15).toFixed(2) : '' });
+                          }}
+                          style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '2px solid #7c3aed', borderRadius: '8px', fontSize: '14px', fontWeight: '800', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+
+                      <div>
+                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Total Incl. 15% GST ($)</label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          placeholder="0.00"
+                          value={quoteData.amountIncGst || (selectedJob.contractAmount ? (selectedJob.contractAmount * 1.15).toFixed(2) : '')}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const num = parseFloat(val);
+                            setQuoteData({ ...quoteData, amountIncGst: val, amountExclGst: !isNaN(num) ? (num / 1.15).toFixed(2) : '' });
+                          }}
+                          style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '2px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        style={{ background: '#7c3aed', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                      >
+                        <Check size={16} style={{ display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> Update Contract
+                      </button>
+                    </div>
+                  </form>
+                </div>
+
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                    <h4 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#0f172a' }}>Original Attached Document</h4>
+                    {selectedJob.originalPdf && (
+                      <button
+                        onClick={() => openPdfNewTab(selectedJob.originalPdf)}
+                        style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', fontSize: '12px' }}
+                      >
+                        <ExternalLink size={13} /> Open in New Tab
+                      </button>
+                    )}
+                  </div>
+
+                  <div style={{ height: '560px', background: '#334155', borderRadius: '12px', overflow: 'hidden', border: '1px solid #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    {selectedJob.originalPdf ? (
+                      <iframe
+                        src={selectedJob.originalPdf}
+                        title="Original Xero Quote PDF"
+                        style={{ width: '100%', height: '100%', border: 'none' }}
+                      />
+                    ) : (
+                      <div style={{ background: '#ffffff', padding: '32px', borderRadius: '12px', textAlign: 'center', maxWidth: '380px' }}>
+                        <FileText size={44} color="#7c3aed" style={{ margin: '0 auto 10px auto' }} />
+                        <h4 style={{ margin: '0 0 6px 0', fontSize: '15px', color: '#0f172a' }}>No PDF Attached Yet</h4>
+                        <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#64748b' }}>Select or drop the PDF file in the box above to store and view the document anytime.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
+      {showNewJobModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15, 23, 42, 0.65)', backdropFilter: 'blur(3px)', display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '16px', zIndex: 110 }}>
+          <form onSubmit={handleCreateJob} style={{ background: '#ffffff', width: '100%', maxWidth: '480px', padding: '24px', borderRadius: '16px', border: '1px solid #e2e8f0', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800' }}>Add New Job / Lead</h2>
+              <button type="button" onClick={() => setShowNewJobModal(false)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}><X size={20} /></button>
+            </div>
+            
+            <input type="text" placeholder="Client Name *" value={newJob.clientName} onChange={e => setNewJob({ ...newJob, clientName: e.target.value })} style={{ width: '100%', padding: '10px', marginBottom: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} required />
+            <input type="text" placeholder="Phone Number" value={newJob.phone} onChange={e => setNewJob({ ...newJob, phone: e.target.value })} style={{ width: '100%', padding: '10px', marginBottom: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            <input type="text" placeholder="Site Address *" value={newJob.address} onChange={e => setNewJob({ ...newJob, address: e.target.value })} style={{ width: '100%', padding: '10px', marginBottom: '12px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} required />
+
+            <div style={{ marginBottom: '12px' }}>
+              <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginBottom: '4px' }}>Where did this lead come from? (Lead Source Tracker)</label>
+              <select value={newJob.source} onChange={e => setNewJob({ ...newJob, source: e.target.value })} style={{ width: '100%', padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', fontWeight: '600' }}>
+                {LEAD_SOURCES.map(src => (
+                  <option key={src.id} value={src.id}>{src.label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+              <select value={newJob.system} onChange={e => setNewJob({ ...newJob, system: e.target.value })} style={{ flex: 1, padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px' }}>
+                <option value="Sto">Sto</option>
+                <option value="Rockcote">Rockcote</option>
+                <option value="Specialized">Specialized</option>
+                <option value="General Repair">General Repair</option>
+                <option value="Direct-Fixed Refurb">Direct-Fixed Refurb</option>
+              </select>
+              <input type="number" placeholder="Area (m²)" value={newJob.sqm} onChange={e => setNewJob({ ...newJob, sqm: e.target.value })} style={{ width: '110px', padding: '10px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+            </div>
+
+            <input type="number" placeholder="Estimated Contract ($ Excl. GST)" value={newJob.contractAmount} onChange={e => setNewJob({ ...newJob, contractAmount: e.target.value })} style={{ width: '100%', padding: '10px', marginBottom: '16px', background: '#f8fafc', border: '1px solid #cbd5e1', borderRadius: '8px', boxSizing: 'border-box' }} />
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+              <button type="button" onClick={() => setShowNewJobModal(false)} style={{ background: 'transparent', color: '#64748b', border: '1px solid #cbd5e1', padding: '9px 16px', borderRadius: '8px', cursor: 'pointer' }}>Cancel</button>
+              <button type="submit" style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '9px 18px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800' }}>Save Job</button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      <GeminiChat />
+    </div>
+  );
+}
