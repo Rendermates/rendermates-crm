@@ -54,6 +54,38 @@ const JOB_PALETTE = [
 const MONTHS_NZ = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+const getLocalDateInputValue = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const createEmptyExtra = () => ({
+  description: '',
+  date: getLocalDateInputValue(),
+  hours: '',
+  rate: '',
+  amount: ''
+});
+
+const getExtraAmount = (hours, rate) => {
+  if (hours === '' || rate === '') return '';
+  const total = Number(hours) * Number(rate);
+  return Number.isFinite(total) && Number(hours) >= 0 && Number(rate) >= 0
+    ? total.toFixed(2)
+    : '';
+};
+
+const formatExtraDate = (date = '') => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-NZ');
+  }
+  return date;
+};
+
 export default function App() {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
@@ -83,7 +115,7 @@ export default function App() {
 
   const [quoteData, setQuoteData] = useState({ quoteNumber: '', amountExclGst: '', amountIncGst: '', fileName: '', pdfDataUrl: '' });
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
-  const [newExtra, setNewExtra] = useState({ description: '', amount: '' });
+  const [newExtra, setNewExtra] = useState(createEmptyExtra);
   const [claimStageType, setClaimStageType] = useState('Deposit');
   const [customStageText, setCustomStageText] = useState('');
   const [claimMode, setClaimMode] = useState('percent');
@@ -327,19 +359,31 @@ export default function App() {
 
   const handleAddExtra = async (e) => {
     e.preventDefault();
-    if (!newExtra.description || !newExtra.amount) return;
+    const amount = Number(newExtra.amount);
+    const hours = newExtra.hours === '' ? null : Number(newExtra.hours);
+    const rate = newExtra.rate === '' ? null : Number(newExtra.rate);
+    if (
+      !newExtra.description.trim() ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(newExtra.date) ||
+      newExtra.amount === '' ||
+      !Number.isFinite(amount) ||
+      amount < 0 ||
+      [hours, rate].some(value => value !== null && (!Number.isFinite(value) || value < 0))
+    ) return;
     const item = {
       id: Date.now().toString(),
-      description: newExtra.description,
-      amount: Number(newExtra.amount) || 0,
+      description: newExtra.description.trim(),
+      date: newExtra.date,
+      hours,
+      rate,
+      amount,
       invoiced: false,
-      date: new Date().toLocaleDateString('en-NZ')
     };
     try {
       await updateDoc(doc(db, 'jobs', selectedJob.id), {
         extras: [...(selectedJob.extras || []), item]
       });
-      setNewExtra({ description: '', amount: '' });
+      setNewExtra(createEmptyExtra());
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -1609,9 +1653,30 @@ export default function App() {
                   <div style={{ fontSize: '14px', fontWeight: '800', color: '#0f172a', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <PlusCircle size={16} color="#0284c7" /> Quick Add Extra / Cost Variation
                   </div>
-                  <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                    <input type="text" placeholder="Description (e.g. Colour match trip to Resene, Timber repair)" value={newExtra.description} onChange={e => setNewExtra({ ...newExtra, description: e.target.value })} style={{ flex: 1, minWidth: '260px', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} required />
-                    <input type="number" placeholder="Amount ($ Excl GST)" value={newExtra.amount} onChange={e => setNewExtra({ ...newExtra, amount: e.target.value })} style={{ width: '160px', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} required />
+                  <div style={{ marginBottom: '12px' }}>
+                    <label htmlFor="extra-description" style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Description</label>
+                    <input id="extra-description" type="text" placeholder="Description (e.g. Colour match trip to Resene, Timber repair)" value={newExtra.description} onChange={e => { const description = e.target.value; setNewExtra(current => ({ ...current, description })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} required />
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                    <div>
+                      <label htmlFor="extra-work-date" style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Work Date</label>
+                      <input id="extra-work-date" type="date" value={newExtra.date} onChange={e => { const date = e.target.value; setNewExtra(current => ({ ...current, date })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} required />
+                    </div>
+                    <div>
+                      <label htmlFor="extra-hours" style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hours Worked</label>
+                      <input id="extra-hours" type="number" min="0" step="any" placeholder="Hours" value={newExtra.hours} onChange={e => { const hours = e.target.value; setNewExtra(current => ({ ...current, hours, amount: getExtraAmount(hours, current.rate) })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} />
+                    </div>
+                    <div>
+                      <label htmlFor="extra-hourly-rate" style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hourly Rate ($/hr)</label>
+                      <input id="extra-hourly-rate" type="number" min="0" step="any" placeholder="Rate" value={newExtra.rate} onChange={e => { const rate = e.target.value; setNewExtra(current => ({ ...current, rate, amount: getExtraAmount(current.hours, rate) })); }} style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} />
+                    </div>
+                    <div>
+                      <label htmlFor="extra-total" style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Total Amount ($ Excl GST)</label>
+                      <input id="extra-total" type="number" min="0" step="any" placeholder="Amount" value={newExtra.amount} onChange={e => { const amount = e.target.value; setNewExtra(current => ({ ...current, amount })); }} aria-describedby="extra-total-help" style={{ width: '100%', boxSizing: 'border-box', padding: '10px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px' }} required />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap', marginTop: '12px' }}>
+                    <span id="extra-total-help" style={{ fontSize: '11px', color: '#64748b' }}>Hours × hourly rate. You can edit the total; changing hours or rate recalculates it.</span>
                     <button type="submit" style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer' }}>+ Add Extra</button>
                   </div>
                 </form>
@@ -1633,9 +1698,14 @@ export default function App() {
                       ) : (
                         extrasList.map((extra) => (
                           <tr key={extra.id} style={{ borderBottom: '1px solid #f1f5f9', background: extra.invoiced ? '#fafafa' : '#ffffff' }}>
-                            <td style={{ padding: '14px 16px', color: '#64748b' }}>{extra.date}</td>
+                            <td style={{ padding: '14px 16px', color: '#64748b' }}>{formatExtraDate(extra.date)}</td>
                             <td style={{ padding: '14px 16px', fontWeight: '700', color: extra.invoiced ? '#64748b' : '#0f172a' }}>
                               <span>{extra.description}</span>
+                              {extra.hours != null && extra.rate != null && (
+                                <div style={{ fontSize: '11px', fontWeight: '400', color: '#64748b', marginTop: '4px' }}>
+                                  {extra.hours} hrs @ ${extra.rate}/hr
+                                </div>
+                              )}
                               {extra.invoiced && (
                                 <span style={{ marginLeft: '8px', fontSize: '11px', color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>Already Billed</span>
                               )}
