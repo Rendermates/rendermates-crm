@@ -23,12 +23,12 @@ const InstagramIcon = ({ size = 16, color = '#e11d48' }) => (
 );
 
 const STAGES = [
-  { id: 'lead', label: 'New Lead', color: '#f59e0b', bg: '#fef3c7' },
-  { id: 'site_visit', label: 'Site Visit Scheduled', color: '#0284c7', bg: '#e0f2fe' },
-  { id: 'quoted', label: 'Quote Sent', color: '#8b5cf6', bg: '#ede9fe' },
-  { id: 'booked', label: 'Booked / Future Work', color: '#0f766e', bg: '#ccfbf1' },
-  { id: 'in_progress', label: 'In Progress', color: '#0ea5e9', bg: '#e0f2fe' },
-  { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5' }
+  { id: 'lead', label: 'New Lead', color: '#f59e0b', bg: '#fef3c7', cardBg: '#F8FAFC', cardAccent: '#64748B' },
+  { id: 'site_visit', label: 'Site Visit Scheduled', color: '#0284c7', bg: '#e0f2fe', cardBg: '#EFF6FF', cardAccent: '#2563EB' },
+  { id: 'quoted', label: 'Quote Sent', color: '#8b5cf6', bg: '#ede9fe', cardBg: '#F5F3FF', cardAccent: '#7C3AED' },
+  { id: 'booked', label: 'Booked / Future Work', color: '#0f766e', bg: '#ccfbf1', cardBg: '#FFFBEB', cardAccent: '#D97706' },
+  { id: 'in_progress', label: 'In Progress', color: '#0ea5e9', bg: '#e0f2fe', cardBg: '#ECFDF5', cardAccent: '#059669' },
+  { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5', cardBg: '#F1F5F9', cardAccent: '#64748B' }
 ];
 
 const getJobsByStage = (jobs, stageId) =>
@@ -1032,10 +1032,11 @@ export default function App() {
                     key={job.id}
                     onClick={() => { setSelectedJobId(job.id); setActiveTab('site_visit'); }}
                     style={{
-                      background: '#ffffff',
+                      background: jStage.cardBg,
                       borderRadius: '14px',
                       padding: '20px',
-                      border: '1px solid #e2e8f0',
+                      border: `1px solid ${jStage.cardAccent}44`,
+                      borderLeft: `4px solid ${jStage.cardAccent}`,
                       boxShadow: '0 2px 4px rgba(0,0,0,0.04)',
                       cursor: 'pointer',
                       transition: 'transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease'
@@ -1043,12 +1044,10 @@ export default function App() {
                     onMouseEnter={(e) => {
                       e.currentTarget.style.transform = 'translateY(-2px)';
                       e.currentTarget.style.boxShadow = '0 10px 15px -3px rgba(0,0,0,0.08)';
-                      e.currentTarget.style.borderColor = '#0284c7';
                     }}
                     onMouseLeave={(e) => {
                       e.currentTarget.style.transform = 'translateY(0)';
                       e.currentTarget.style.boxShadow = '0 2px 4px rgba(0,0,0,0.04)';
-                      e.currentTarget.style.borderColor = '#e2e8f0';
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
