@@ -57,6 +57,30 @@ const JOB_PALETTE = [
 const MONTHS_NZ = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+const getLocalDateInputValue = () => {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const getExtraAmount = (hours, rate) => {
+  const hoursValue = Number(hours);
+  const rateValue = Number(rate);
+  return hours !== '' && rate !== '' && Number.isFinite(hoursValue) && Number.isFinite(rateValue)
+    ? (hoursValue * rateValue).toFixed(2)
+    : '';
+};
+
+const formatExtraDate = (date = '') => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    const [year, month, day] = date.split('-').map(Number);
+    return new Date(year, month - 1, day).toLocaleDateString('en-NZ');
+  }
+  return date;
+};
+
 export default function App() {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
@@ -82,6 +106,7 @@ export default function App() {
   const [isProcessingPdf, setIsProcessingPdf] = useState(false);
   
   const [newExtra, setNewExtra] = useState({ 
+    date: getLocalDateInputValue(),
     description: '', subDescription: '', workers: 1, rate: 85, hours: '', amount: '' 
   });
   
@@ -360,7 +385,7 @@ export default function App() {
 
   const handleAddExtra = async (e) => {
     e.preventDefault();
-    if (!newExtra.description || !newExtra.amount) return;
+    if (!newExtra.description || !newExtra.date || !newExtra.amount) return;
     const item = {
       id: Date.now().toString(),
       description: newExtra.description,
@@ -370,13 +395,13 @@ export default function App() {
       hours: Number(newExtra.hours) || null,
       amount: Number(newExtra.amount) || 0,
       invoiced: false,
-      date: new Date().toLocaleDateString('en-NZ')
+      date: newExtra.date
     };
     try {
       await updateDoc(doc(db, 'jobs', selectedJob.id), {
         extras: [...(selectedJob.extras || []), item]
       });
-      setNewExtra({ description: '', subDescription: '', workers: 1, rate: 85, hours: '', amount: '' });
+      setNewExtra({ date: getLocalDateInputValue(), description: '', subDescription: '', workers: 1, rate: 85, hours: '', amount: '' });
     } catch (err) {
       alert('Error: ' + err.message);
     }
@@ -1772,50 +1797,52 @@ export default function App() {
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '12px' }}>
                       <div>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Work Date</label>
+                        <input
+                          type="date"
+                          value={newExtra.date}
+                          onChange={e => setNewExtra(current => ({ ...current, date: e.target.value }))}
+                          style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
+                          required
+                        />
+                      </div>
+
+                      <div>
                         <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Workers</label>
                         <input 
                           type="number" 
                           min="1"
                           value={newExtra.workers} 
                           onChange={e => {
-                            const w = e.target.value;
-                            const h = newExtra.hours;
-                            const r = newExtra.rate;
-                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
-                            setNewExtra({ ...newExtra, workers: w, amount: amt });
+                            const workers = e.target.value;
+                            setNewExtra(current => ({ ...current, workers }));
                           }} 
                           style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
                         />
                       </div>
 
                       <div>
-                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Rate ($/hr)</label>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hourly Rate ($/hr)</label>
                         <input 
                           type="number" 
                           value={newExtra.rate} 
                           onChange={e => {
-                            const r = e.target.value;
-                            const w = newExtra.workers;
-                            const h = newExtra.hours;
-                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
-                            setNewExtra({ ...newExtra, rate: r, amount: amt });
+                            const rate = e.target.value;
+                            setNewExtra(current => ({ ...current, rate, amount: getExtraAmount(current.hours, rate) }));
                           }} 
                           style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
                         />
                       </div>
 
                       <div>
-                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hours Total</label>
+                        <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hours</label>
                         <input 
                           type="number" 
                           placeholder="Hrs"
                           value={newExtra.hours} 
                           onChange={e => {
-                            const h = e.target.value;
-                            const w = newExtra.workers;
-                            const r = newExtra.rate;
-                            const amt = (w && h && r) ? (w * h * r).toFixed(2) : newExtra.amount;
-                            setNewExtra({ ...newExtra, hours: h, amount: amt });
+                            const hours = e.target.value;
+                            setNewExtra(current => ({ ...current, hours, amount: getExtraAmount(hours, current.rate) }));
                           }} 
                           style={{ width: '100%', padding: '10px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }} 
                         />
@@ -1828,7 +1855,7 @@ export default function App() {
                           step="any"
                           placeholder="Amount" 
                           value={newExtra.amount} 
-                          onChange={e => setNewExtra({ ...newExtra, amount: e.target.value })} 
+                          onChange={e => setNewExtra(current => ({ ...current, amount: e.target.value }))} 
                           style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', fontWeight: '800', boxSizing: 'border-box' }} 
                           required 
                         />
@@ -1860,17 +1887,17 @@ export default function App() {
                       ) : (
                         extrasList.map((extra) => (
                           <tr key={extra.id} style={{ borderBottom: '1px solid #f1f5f9', background: extra.invoiced ? '#fafafa' : '#ffffff' }}>
-                            <td style={{ padding: '14px 16px', color: '#64748b' }}>{extra.date}</td>
+                            <td style={{ padding: '14px 16px', color: '#64748b' }}>{formatExtraDate(extra.date)}</td>
                             <td style={{ padding: '14px 16px', color: extra.invoiced ? '#64748b' : '#0f172a' }}>
                               <div style={{ fontWeight: '700' }}>{extra.description}</div>
                               {extra.subDescription && (
                                 <div style={{ fontSize: '11px', color: '#64748b', marginTop: '4px' }}>{extra.subDescription}</div>
                               )}
-                              {extra.workers && extra.hours && extra.rate && (
-                                <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '600', marginTop: '3px' }}>
-                                  {extra.workers} worker(s) × {extra.hours} hrs @ ${extra.rate}/hr
-                                </div>
-                              )}
+                              {(extra.workers || extra.hours || extra.rate) && (
+                                  <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: '600', marginTop: '3px' }}>
+                                    {extra.workers ? `Workers: ${extra.workers} | ` : ''}{extra.hours} hrs @ ${extra.rate}/hr
+                                  </div>
+                                )}
                               {extra.invoiced && (
                                 <span style={{ display: 'inline-block', marginTop: '6px', fontSize: '11px', color: '#059669', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px', fontWeight: '800' }}>Already Billed</span>
                               )}
