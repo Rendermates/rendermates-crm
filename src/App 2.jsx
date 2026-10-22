@@ -1824,7 +1824,9 @@ export default function App() {
                       <div>
                         <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hourly Rate ($/hr)</label>
                         <input 
-                          type="number" 
+                          type="number"
+                          min="0"
+                          step="any"
                           value={newExtra.rate} 
                           onChange={e => {
                             const rate = e.target.value;
@@ -1837,7 +1839,9 @@ export default function App() {
                       <div>
                         <label style={{ display: 'block', fontSize: '11px', fontWeight: '700', color: '#64748b', marginBottom: '4px' }}>Hours</label>
                         <input 
-                          type="number" 
+                          type="number"
+                          min="0"
+                          step="any"
                           placeholder="Hrs"
                           value={newExtra.hours} 
                           onChange={e => {
