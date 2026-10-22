@@ -26,9 +26,16 @@ const STAGES = [
   { id: 'lead', label: 'New Lead', color: '#f59e0b', bg: '#fef3c7' },
   { id: 'site_visit', label: 'Site Visit Scheduled', color: '#0284c7', bg: '#e0f2fe' },
   { id: 'quoted', label: 'Quote Sent', color: '#8b5cf6', bg: '#ede9fe' },
+  { id: 'booked', label: 'Booked / Future Work', color: '#0f766e', bg: '#ccfbf1' },
   { id: 'in_progress', label: 'In Progress', color: '#0ea5e9', bg: '#e0f2fe' },
   { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5' }
 ];
+
+const getJobsByStage = (jobs, stageId) =>
+  stageId === 'all' ? jobs : jobs.filter(job => job.status === stageId);
+
+const getBookedJobs = jobs =>
+  jobs.filter(job => job.status === 'booked' || job.status === 'in_progress' || (job.startDate && job.endDate));
 
 const LEAD_SOURCES = [
   { id: 'website', label: 'Website (Organic)', color: '#059669', bg: '#d1fae5', icon: Globe },
@@ -162,7 +169,7 @@ export default function App() {
     }
   }, [selectedJobId]);
 
-  const bookedJobs = jobs.filter(j => j.status === 'in_progress' || (j.startDate && j.endDate));
+  const bookedJobs = getBookedJobs(jobs);
 
   const upcomingReminders = bookedJobs.filter(j => {
     if (!j.startDate) return false;
@@ -205,7 +212,7 @@ export default function App() {
       await updateDoc(doc(db, 'jobs', selectedJob.id), {
         startDate: jobStartDate,
         endDate: jobEndDate,
-        status: selectedJob.status === 'lead' || selectedJob.status === 'quoted' ? 'in_progress' : selectedJob.status
+        status: selectedJob.status === 'lead' || selectedJob.status === 'quoted' ? 'booked' : selectedJob.status
       });
       alert('Job Schedule updated & linked to Annual Calendar!');
     } catch (err) {
@@ -505,10 +512,9 @@ export default function App() {
     }
   };
 
-  const filteredJobs = jobs.filter(j => {
-    const matchStage = filterStage === 'all' || j.status === filterStage;
+  const filteredJobs = getJobsByStage(jobs, filterStage).filter(j => {
     const matchSource = filterSource === 'all' || (j.source || 'website') === filterSource;
-    return matchStage && matchSource;
+    return matchSource;
   });
 
   return (
@@ -980,7 +986,7 @@ export default function App() {
               All Stages ({jobs.length})
             </button>
             {STAGES.map(s => {
-              const count = jobs.filter(j => j.status === s.id).length;
+              const count = getJobsByStage(jobs, s.id).length;
               return (
                 <button
                   key={s.id}
