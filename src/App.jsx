@@ -5,7 +5,7 @@ import {
   Plus, Phone, MapPin, DollarSign, PlusCircle, Trash2, X, FileText, 
   FileUp, Check, Zap, Eye, ExternalLink, Edit2, CheckCircle2, Clock, 
   ArrowLeft, ChevronRight, ChevronLeft, Briefcase, FileCheck, Layers, Calendar, 
-  Compass, Globe, Search, Share2, Tag, AlertTriangle
+  Compass, Globe, Search, Share2, Tag, AlertTriangle, Archive, ArchiveRestore, ChevronDown, Mail
 } from 'lucide-react';
 
 const FacebookIcon = ({ size = 16, color = '#2563eb' }) => (
@@ -23,7 +23,7 @@ const InstagramIcon = ({ size = 16, color = '#e11d48' }) => (
 );
 
 const STAGES = [
-  { id: 'lead', label: 'New Lead', color: '#f59e0b', bg: '#fef3c7', cardBg: '#F8FAFC', cardAccent: '#64748B' },
+  { id: 'lead', label: 'New Lead', color: '#dc2626', bg: '#fee2e2', cardBg: '#fff1f2', cardAccent: '#ef4444' },
   { id: 'site_visit', label: 'Site Visit Scheduled', color: '#0284c7', bg: '#e0f2fe', cardBg: '#EFF6FF', cardAccent: '#2563EB' },
   { id: 'quoted', label: 'Quote Sent', color: '#8b5cf6', bg: '#ede9fe', cardBg: '#F5F3FF', cardAccent: '#7C3AED' },
   { id: 'booked', label: 'Booked / Future Work', color: '#0f766e', bg: '#ccfbf1', cardBg: '#FFFBEB', cardAccent: '#D97706' },
@@ -32,7 +32,10 @@ const STAGES = [
 ];
 
 const getJobsByStage = (jobs, stageId) =>
-  stageId === 'all' ? jobs : jobs.filter(job => job.status === stageId);
+  stageId === 'all' ? jobs : jobs.filter(job => (job.status || 'lead') === stageId);
+
+const isJobArchived = job => Boolean(job?.archived || job?.archivedAt);
+const getJobName = job => job?.clientName || job?.name || 'New Lead';
 
 const getBookedJobs = jobs =>
   jobs.filter(job => job.status === 'booked' || job.status === 'in_progress' || (job.startDate && job.endDate));
@@ -99,6 +102,8 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('claims');
   const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
+  const [showArchivedJobs, setShowArchivedJobs] = useState(false);
+  const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(false);
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [showCalendarView, setShowCalendarView] = useState(false);
   const [calendarYear, setCalendarYear] = useState(2026);
@@ -158,6 +163,9 @@ export default function App() {
   }, []);
 
   const selectedJob = jobs.find(j => j.id === selectedJobId) || null;
+  const activeJobs = jobs.filter(job => !isJobArchived(job));
+  const archivedJobs = jobs.filter(isJobArchived);
+  const currentListJobs = showArchivedJobs ? archivedJobs : activeJobs;
 
   useEffect(() => {
     if (selectedJob) {
@@ -169,7 +177,7 @@ export default function App() {
     }
   }, [selectedJobId]);
 
-  const bookedJobs = getBookedJobs(jobs);
+  const bookedJobs = getBookedJobs(activeJobs);
 
   const upcomingReminders = bookedJobs.filter(j => {
     if (!j.startDate) return false;
@@ -202,6 +210,19 @@ export default function App() {
       await updateDoc(doc(db, 'jobs', selectedJob.id), updates);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleToggleArchiveJob = async (job) => {
+    if (!job?.id) return;
+    const wasArchived = isJobArchived(job);
+    try {
+      await updateDoc(doc(db, 'jobs', job.id), wasArchived
+        ? { archived: false, archivedAt: null }
+        : { archived: true, archivedAt: new Date().toISOString() });
+      if (selectedJobId === job.id) setSelectedJobId(null);
+    } catch (err) {
+      alert((wasArchived ? 'Error restoring job: ' : 'Error archiving job: ') + err.message);
     }
   };
 
@@ -266,8 +287,8 @@ export default function App() {
     const endMinute = (timeStr || '09:00').split(':')[1] || '00';
     const endIso = `${cleanDate}T${endHour}${endMinute}00`;
 
-    const title = `Site Visit — ${job.clientName} (Rendermates)`;
-    const details = `Client: ${job.clientName}\nPhone: ${job.phone || 'N/A'}\nSystem: ${job.system || 'Sto'}\nNotes: ${notesStr || job.siteVisitNotes || 'Exterior plastering & coating inspection'}`;
+    const title = `Site Visit — ${getJobName(job)} (Rendermates)`;
+    const details = `Client: ${getJobName(job)}\nPhone: ${job.phone || 'N/A'}\nSystem: ${job.system || 'Sto'}\nNotes: ${notesStr || job.siteVisitNotes || 'Exterior plastering & coating inspection'}`;
     const location = job.address || '';
 
     return `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent(title)}&dates=${startIso}/${endIso}&details=${encodeURIComponent(details)}&location=${encodeURIComponent(location)}`;
@@ -280,7 +301,7 @@ export default function App() {
     endDateObj.setDate(endDateObj.getDate() + 1);
     const endIso = endDateObj.toISOString().split('T')[0].replace(/-/g, '');
 
-    const title = `ACTIVE PROJECT: ${job.clientName} — ${job.system} (Rendermates)`;
+    const title = `ACTIVE PROJECT: ${getJobName(job)} — ${job.system} (Rendermates)`;
     const details = `Site: ${job.address}\nPhone: ${job.phone || 'N/A'}\nContract: $${job.contractAmount || 0} Excl. GST\nSystem: ${job.system}\nArea: ${job.sqm || 0} m²`;
     const location = job.address || '';
 
@@ -512,10 +533,13 @@ export default function App() {
     }
   };
 
-  const filteredJobs = getJobsByStage(jobs, filterStage).filter(j => {
+  const filteredJobs = getJobsByStage(currentListJobs, filterStage).filter(j => {
     const matchSource = filterSource === 'all' || (j.source || 'website') === filterSource;
     return matchSource;
   });
+  const showNewLeadsSection = !showArchivedJobs && (filterStage === 'all' || filterStage === 'lead');
+  const newLeadJobs = showNewLeadsSection ? filteredJobs.filter(j => !j.status || j.status === 'lead') : [];
+  const otherFilteredJobs = showNewLeadsSection ? filteredJobs.filter(j => j.status && j.status !== 'lead') : filteredJobs;
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
@@ -557,6 +581,19 @@ export default function App() {
               </button>
 
               <button
+                onClick={() => {
+                  setShowArchivedJobs(current => !current);
+                  setFilterStage('all');
+                  setFilterSource('all');
+                  setShowCalendarView(false);
+                }}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', background: showArchivedJobs ? '#f1f5f9' : '#fff1f2', color: showArchivedJobs ? '#475569' : '#be123c', border: '1px solid #fecdd3', padding: '10px 16px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '13px' }}
+              >
+                {showArchivedJobs ? <Briefcase size={17} /> : <Archive size={17} />}
+                {showArchivedJobs ? 'Active Jobs (' + activeJobs.length + ')' : 'Archived (' + archivedJobs.length + ')'}
+              </button>
+
+              <button
                 onClick={() => setShowNewJobModal(true)}
                 style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#0284c7', color: '#ffffff', border: 'none', padding: '10px 20px', borderRadius: '8px', cursor: 'pointer', fontWeight: '700', fontSize: '14px', boxShadow: '0 2px 4px rgba(2, 132, 199, 0.2)' }}
               >
@@ -580,7 +617,7 @@ export default function App() {
                     onClick={() => { setSelectedJobId(rem.id); setActiveTab('site_visit'); }}
                     style={{ background: '#ffffff', border: '1px solid #f59e0b', color: '#b45309', padding: '4px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: '800', cursor: 'pointer' }}
                   >
-                    {rem.clientName} (Starts: {rem.startDate}) →
+                    {getJobName(rem)} (Starts: {rem.startDate}) →
                   </button>
                 ))}
               </div>
@@ -682,7 +719,7 @@ export default function App() {
                                   textOverflow: 'ellipsis'
                                 }}
                               >
-                                • {jb.clientName}
+                                • {getJobName(jb)}
                               </div>
                             );
                           })}
@@ -820,9 +857,9 @@ export default function App() {
                                       textOverflow: 'ellipsis',
                                       cursor: 'pointer'
                                     }}
-                                    title={`${job.clientName} (${job.startDate} to ${job.endDate})`}
+                                    title={`${getJobName(job)} (${job.startDate} to ${job.endDate})`}
                                   >
-                                    {job.clientName}
+                                    {getJobName(job)}
                                   </div>
                                 );
                               })}
@@ -872,7 +909,7 @@ export default function App() {
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                                   <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: pal.border }} />
                                   <div>
-                                    <span style={{ fontWeight: '800', fontSize: '14px', color: pal.text }}>{job.clientName}</span>
+                                    <span style={{ fontWeight: '800', fontSize: '14px', color: pal.text }}>{getJobName(job)}</span>
                                     <span style={{ fontSize: '13px', color: '#64748b', marginLeft: '6px' }}>— {job.address}</span>
                                     <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>
                                       System: <strong>{job.system}</strong> {job.sqm ? `(${job.sqm} m²)` : ''} • Contract: <strong>${(Number(job.contractAmount) || 0).toLocaleString('en-NZ')}</strong> Excl. GST
@@ -920,7 +957,7 @@ export default function App() {
               <span style={{ fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Globe size={14} color="#0284c7" /> Lead Sources Tracker (Website & Channels)
               </span>
-              <span style={{ fontSize: '12px', color: '#64748b' }}>Total Leads: <strong>{jobs.length}</strong></span>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>{showArchivedJobs ? 'Archived Jobs:' : 'Active Jobs:'} <strong>{currentListJobs.length}</strong></span>
             </div>
             
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -937,10 +974,10 @@ export default function App() {
                   cursor: 'pointer'
                 }}
               >
-                All Sources ({jobs.length})
+                All Sources ({currentListJobs.length})
               </button>
               {LEAD_SOURCES.map(source => {
-                const count = jobs.filter(j => (j.source || 'website') === source.id).length;
+                const count = currentListJobs.filter(j => (j.source || 'website') === source.id).length;
                 const IconComponent = source.icon;
                 return (
                   <button
@@ -983,10 +1020,10 @@ export default function App() {
                 cursor: 'pointer'
               }}
             >
-              All Stages ({jobs.length})
+              All Stages ({currentListJobs.length})
             </button>
             {STAGES.map(s => {
-              const count = getJobsByStage(jobs, s.id).length;
+              const count = getJobsByStage(currentListJobs, s.id).length;
               return (
                 <button
                   key={s.id}
@@ -1009,15 +1046,69 @@ export default function App() {
             })}
           </div>
 
+          {showNewLeadsSection && (
+            <section aria-labelledby="new-leads-heading" style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '14px', marginBottom: '18px', overflow: 'hidden' }}>
+              <button
+                type="button"
+                onClick={() => setNewLeadsCollapsed(current => !current)}
+                aria-expanded={!newLeadsCollapsed}
+                aria-controls="new-leads-content"
+                style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', padding: '14px 18px', border: 'none', background: 'transparent', color: '#9f1239', textAlign: 'left', cursor: 'pointer' }}
+              >
+                <span>
+                  <span id="new-leads-heading" style={{ display: 'block', fontSize: '16px', fontWeight: '800' }}>New Leads <span style={{ background: '#ffe4e6', borderRadius: '999px', padding: '2px 8px', marginLeft: '6px' }}>{newLeadJobs.length}</span></span>
+                  <span style={{ display: 'block', fontSize: '12px', color: '#9f1239', marginTop: '3px' }}>New enquiries waiting for review</span>
+                </span>
+                <ChevronDown size={19} style={{ transform: newLeadsCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.15s ease', flexShrink: 0 }} />
+              </button>
+              <div id="new-leads-content" hidden={newLeadsCollapsed} style={{ padding: '0 14px 14px' }}>
+                {newLeadJobs.length === 0 ? (
+                  <p style={{ margin: 0, padding: '8px 4px', color: '#9f1239', fontSize: '13px' }}>No new leads at the moment.</p>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
+                    {newLeadJobs.map(job => {
+                      const leadSource = LEAD_SOURCES.find(src => src.id === (job.source || 'website')) || LEAD_SOURCES[0];
+                      const LeadSourceIcon = leadSource.icon;
+                      const leadEmail = job.email || job.clientEmail;
+                      const leadMessage = job.message || job.enquiryMessage || job.websiteMessage;
+                      return (
+                        <div key={job.id} onClick={() => { setSelectedJobId(job.id); setActiveTab('site_visit'); }} style={{ background: '#fffafa', border: '1px solid #fecdd3', borderLeft: '4px solid #ef4444', borderRadius: '10px', padding: '14px', cursor: 'pointer', boxShadow: '0 1px 3px rgba(127, 29, 29, 0.06)' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' }}>
+                            <div style={{ minWidth: 0 }}>
+                              <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '800', color: '#7f1d1d', overflowWrap: 'anywhere' }}>{getJobName(job)}</h3>
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: leadSource.bg, color: leadSource.color, padding: '2px 7px', borderRadius: '7px', fontSize: '10px', fontWeight: '700', marginTop: '5px' }}><LeadSourceIcon size={11} color={leadSource.color} /> {leadSource.label}</span>
+                            </div>
+                            <span style={{ background: '#fee2e2', color: '#b91c1c', padding: '3px 8px', borderRadius: '999px', fontSize: '10px', fontWeight: '800', whiteSpace: 'nowrap' }}>New Lead</span>
+                          </div>
+                          <div style={{ marginTop: '10px', fontSize: '12px', color: '#57534e', display: 'flex', alignItems: 'flex-start', gap: '6px' }}><MapPin size={13} color="#ef4444" style={{ flexShrink: 0, marginTop: '1px' }} /><span>{job.address || 'No property address supplied'}</span></div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '8px', fontSize: '12px' }}>
+                            {job.phone && <span style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#57534e' }}><Phone size={12} /> {job.phone}</span>}
+                            {leadEmail && <a href={'mailto:' + leadEmail} onClick={event => event.stopPropagation()} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', color: '#9f1239', textDecoration: 'none', overflowWrap: 'anywhere' }}><Mail size={12} /> {leadEmail}</a>}
+                          </div>
+                          {leadMessage && <div style={{ marginTop: '10px', padding: '9px 10px', background: '#fff1f2', borderRadius: '8px', color: '#7f1d1d', fontSize: '12px', lineHeight: 1.45 }}><strong style={{ display: 'block', fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '3px' }}>Enquiry message</strong><span style={{ display: '-webkit-box', WebkitBoxOrient: 'vertical', WebkitLineClamp: 3, overflow: 'hidden', whiteSpace: 'pre-wrap' }}>{leadMessage}</span></div>}
+                          <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '10px' }}>
+                            <button type="button" onClick={event => { event.stopPropagation(); handleToggleArchiveJob(job); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ffffff', border: '1px solid #fda4af', color: '#9f1239', padding: '6px 9px', borderRadius: '7px', cursor: 'pointer', fontSize: '11px', fontWeight: '800' }}><Archive size={13} /> Archive</button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
-            {filteredJobs.length === 0 ? (
+            {otherFilteredJobs.length === 0 ? (
+              showNewLeadsSection && newLeadJobs.length > 0 ? null : (
               <div style={{ gridColumn: '1 / -1', background: '#ffffff', borderRadius: '12px', padding: '48px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
                 <Briefcase size={40} style={{ margin: '0 auto 12px auto' }} />
                 <h3 style={{ margin: 0, color: '#475569' }}>No jobs match current filter</h3>
                 <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Change your stage or source filter above, or click "+ New Job".</p>
               </div>
+              )
             ) : (
-              filteredJobs.map(job => {
+              otherFilteredJobs.map(job => {
                 const jExtras = (job.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
                 const jContract = (Number(job.contractAmount) || 0) + jExtras;
                 const jPaid = (job.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
@@ -1052,7 +1143,7 @@ export default function App() {
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
                       <div>
-                        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>{job.clientName}</h2>
+                        <h2 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>{getJobName(job)}</h2>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: jSource.bg, color: jSource.color, padding: '2px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: '700', marginTop: '4px' }}>
                           <SourceIcon size={11} color={jSource.color} /> {jSource.label}
                         </span>
@@ -1104,6 +1195,9 @@ export default function App() {
 
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: '8px', borderTop: '1px solid #f1f5f9', fontSize: '12px', color: '#64748b' }}>
                       <span>System: <strong>{job.system}</strong> {job.sqm ? `(${job.sqm} m²)` : ''}</span>
+                      <button type="button" onClick={event => { event.stopPropagation(); handleToggleArchiveJob(job); }} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', background: '#ffffff', border: '1px solid #cbd5e1', color: isJobArchived(job) ? '#047857' : '#475569', padding: '5px 8px', borderRadius: '7px', cursor: 'pointer', fontSize: '11px', fontWeight: '800' }}>
+                        {isJobArchived(job) ? <ArchiveRestore size={13} /> : <Archive size={13} />} {isJobArchived(job) ? 'Restore' : 'Archive'}
+                      </button>
                       <span style={{ color: '#0284c7', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '2px' }}>
                         Open Workspace <ChevronRight size={14} />
                       </span>
@@ -1124,7 +1218,12 @@ export default function App() {
             >
               <ArrowLeft size={16} /> All Jobs
             </button>
-            <span style={{ fontSize: '12px', color: '#64748b' }}>Unique Client File: #{selectedJob.id.slice(-6)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => handleToggleArchiveJob(selectedJob)} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ffffff', border: '1px solid #cbd5e1', color: isJobArchived(selectedJob) ? '#047857' : '#475569', padding: '8px 11px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '12px' }}>
+                {isJobArchived(selectedJob) ? <ArchiveRestore size={14} /> : <Archive size={14} />} {isJobArchived(selectedJob) ? 'Restore Job' : 'Archive Job'}
+              </button>
+              <span style={{ fontSize: '12px', color: '#64748b' }}>Unique Client File: #{selectedJob.id.slice(-6)}</span>
+            </div>
           </div>
 
           <div style={{ background: '#ffffff', borderRadius: '16px', padding: '24px', border: '1px solid #e2e8f0', boxShadow: '0 1px 3px rgba(0,0,0,0.06)', marginBottom: '20px' }}>
@@ -1146,7 +1245,7 @@ export default function App() {
                 </div>
 
                 <h1 style={{ margin: '4px 0 8px 0', fontSize: '26px', fontWeight: '800', color: '#0f172a' }}>
-                  {selectedJob.clientName}
+                  {getJobName(selectedJob)}
                 </h1>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '14px', color: '#475569' }}>
@@ -1171,9 +1270,16 @@ export default function App() {
                       <Phone size={15} color="#64748b" /> {selectedJob.phone}
                     </a>
                   )}
+                  {(selectedJob.email || selectedJob.clientEmail) && <a href={'mailto:' + (selectedJob.email || selectedJob.clientEmail)} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#9f1239', textDecoration: 'none' }}><Mail size={15} color="#64748b" /> {selectedJob.email || selectedJob.clientEmail}</a>}
                   <span>System: <strong>{selectedJob.system}</strong></span>
                   {selectedJob.sqm > 0 && <span><strong>{selectedJob.sqm} m²</strong></span>}
                 </div>
+                {(selectedJob.message || selectedJob.enquiryMessage || selectedJob.websiteMessage) && (
+                  <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '9px', padding: '12px 14px', marginTop: '14px', maxWidth: '760px' }}>
+                    <div style={{ fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9f1239', marginBottom: '4px' }}>Website enquiry message</div>
+                    <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#7f1d1d', whiteSpace: 'pre-wrap' }}>{selectedJob.message || selectedJob.enquiryMessage || selectedJob.websiteMessage}</div>
+                  </div>
+                )}
               </div>
 
               <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'right' }}>
