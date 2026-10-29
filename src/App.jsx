@@ -105,6 +105,8 @@ export default function App() {
   const [filterSource, setFilterSource] = useState('all');
   const [showArchivedJobs, setShowArchivedJobs] = useState(false);
   const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(true);
+  const [upcomingCollapsed, setUpcomingCollapsed] = useState(false);
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
   const [dashboardTab, setDashboardTab] = useState('jobs');
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [showCalendarView, setShowCalendarView] = useState(false);
@@ -661,14 +663,20 @@ export default function App() {
           {dashboardTab === 'jobs' && <>
 
           {upcomingReminders.length > 0 && (
-            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <section style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px' }}>
+              <button type="button" aria-expanded={!upcomingCollapsed} aria-controls="upcoming-start-content" onClick={() => setUpcomingCollapsed(value => !value)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: 'transparent', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', color: '#92400e' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={20} color="#b45309" />
                 <span style={{ fontSize: '13px', color: '#92400e', fontWeight: '700' }}>
-                  <strong>Upcoming Start Date Alert:</strong> You have {upcomingReminders.length} project(s) scheduled to start in the next 7 days!
+                  <strong>Upcoming Start Date Alert ({upcomingReminders.length})</strong>
                 </span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                </span>
+                <ChevronDown size={19} style={{ transform: upcomingCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }} />
+              </button>
+              <div id="upcoming-start-content" hidden={upcomingCollapsed}>
+                <p style={{ fontSize: '13px', color: '#92400e', margin: '10px 0' }}>You have {upcomingReminders.length} project(s) scheduled to start in the next 7 days.</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {upcomingReminders.map(rem => (
                   <button
                     key={rem.id}
@@ -678,8 +686,9 @@ export default function App() {
                     {getJobName(rem)} (Starts: {rem.startDate}) →
                   </button>
                 ))}
+                </div>
               </div>
-            </div>
+            </section>
           )}
 
           {showCalendarView && (
@@ -1026,13 +1035,16 @@ export default function App() {
           )}
 
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <button type="button" aria-expanded={!sourcesCollapsed} aria-controls="lead-sources-content" onClick={() => setSourcesCollapsed(value => !value)}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', background: 'transparent', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Globe size={14} color="#0284c7" /> Lead Sources Tracker (Website & Channels)
               </span>
-              <span style={{ fontSize: '12px', color: '#64748b' }}>{showArchivedJobs ? 'Archived Jobs:' : 'Active Jobs:'} <strong>{currentListJobs.length}</strong></span>
-            </div>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', color: '#64748b' }}>{showArchivedJobs ? 'Archived Jobs:' : 'Active Jobs:'} <strong>{currentListJobs.length}</strong><ChevronDown size={19} style={{ transform: sourcesCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }} /></span>
+            </button>
+            <p style={{ margin: '6px 0', fontSize: '11px', color: '#64748b' }}>Filter: {filterSource === 'all' ? 'All Sources' : LEAD_SOURCES.find(source => source.id === filterSource)?.label || filterSource}</p>
             
+            <div id="lead-sources-content" hidden={sourcesCollapsed}>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => setFilterSource('all')}
@@ -1075,6 +1087,7 @@ export default function App() {
                   </button>
                 );
               })}
+            </div>
             </div>
           </div>
 
