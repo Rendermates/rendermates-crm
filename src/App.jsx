@@ -36,9 +36,6 @@ const STAGES = [
   { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5', cardBg: '#F1F5F9', cardAccent: '#64748B' }
 ];
 
-const getJobsByStage = (jobs, stageId) =>
-  stageId === 'all' ? jobs : jobs.filter(job => (job.status || 'lead') === stageId);
-
 const isJobArchived = job => Boolean(job?.archived || job?.archivedAt);
 const getJobName = job => job?.clientName || job?.name || 'New Lead';
 
@@ -105,7 +102,6 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [activeTab, setActiveTab] = useState('claims');
-  const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [showArchivedJobs, setShowArchivedJobs] = useState(false);
   const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(true);
@@ -586,11 +582,11 @@ export default function App() {
     }
   };
 
-  const filteredJobs = getJobsByStage(currentListJobs, filterStage).filter(j => {
+  const filteredJobs = currentListJobs.filter(j => {
     const matchSource = filterSource === 'all' || (j.source || 'website') === filterSource;
     return matchSource;
   });
-  const showNewLeadsSection = !showArchivedJobs && (filterStage === 'all' || filterStage === 'lead');
+  const showNewLeadsSection = !showArchivedJobs;
   const newLeadJobs = showNewLeadsSection ? filteredJobs.filter(j => !j.status || j.status === 'lead') : [];
   const otherFilteredJobs = showNewLeadsSection ? filteredJobs.filter(j => j.status && j.status !== 'lead') : filteredJobs;
 
@@ -637,7 +633,6 @@ export default function App() {
                 onClick={() => {
                   setShowArchivedJobs(current => !current);
                   setDashboardTab('jobs');
-                  setFilterStage('all');
                   setFilterSource('all');
                   setShowCalendarView(false);
                 }}
@@ -1083,47 +1078,6 @@ export default function App() {
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-            <button
-              onClick={() => setFilterStage('all')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '20px',
-                border: '1px solid',
-                borderColor: filterStage === 'all' ? '#0284c7' : '#cbd5e1',
-                background: filterStage === 'all' ? '#0284c7' : '#ffffff',
-                color: filterStage === 'all' ? '#ffffff' : '#475569',
-                fontWeight: '700',
-                fontSize: '13px',
-                cursor: 'pointer'
-              }}
-            >
-              All Stages ({currentListJobs.length})
-            </button>
-            {STAGES.map(s => {
-              const count = getJobsByStage(currentListJobs, s.id).length;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setFilterStage(s.id)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    border: '1px solid',
-                    borderColor: filterStage === s.id ? s.color : '#cbd5e1',
-                    background: filterStage === s.id ? s.bg : '#ffffff',
-                    color: filterStage === s.id ? s.color : '#475569',
-                    fontWeight: '700',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {s.label} ({count})
-                </button>
-              );
-            })}
-          </div>
-
           {showNewLeadsSection && (
             <section aria-labelledby="new-leads-heading" style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '14px', marginBottom: '18px', overflow: 'hidden' }}>
               <button
@@ -1181,8 +1135,8 @@ export default function App() {
               showNewLeadsSection && newLeadJobs.length > 0 ? null : (
               <div style={{ gridColumn: '1 / -1', background: '#ffffff', borderRadius: '12px', padding: '48px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
                 <Briefcase size={40} style={{ margin: '0 auto 12px auto' }} />
-                <h3 style={{ margin: 0, color: '#475569' }}>No jobs match current filter</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Change your stage or source filter above, or click "+ New Job".</p>
+                <h3 style={{ margin: 0, color: '#475569' }}>No jobs match this source</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Choose another source or click "+ New Job".</p>
               </div>
               )
             ) : (
