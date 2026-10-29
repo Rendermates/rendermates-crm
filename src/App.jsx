@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getCalendarDateHighlights } from './calendar-date';
+import WorkGroup from './WorkGroup';
+import ReceiptsForecast from './ReceiptsForecast';
+import ClaimDates from './ClaimDates';
+import { groupWork, isDateKey } from './work-finance';
 import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { 
@@ -31,9 +35,6 @@ const STAGES = [
   { id: 'in_progress', label: 'In Progress', color: '#0ea5e9', bg: '#e0f2fe', cardBg: '#ECFDF5', cardAccent: '#059669' },
   { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5', cardBg: '#F1F5F9', cardAccent: '#64748B' }
 ];
-
-const getJobsByStage = (jobs, stageId) =>
-  stageId === 'all' ? jobs : jobs.filter(job => (job.status || 'lead') === stageId);
 
 const isJobArchived = job => Boolean(job?.archived || job?.archivedAt);
 const getJobName = job => job?.clientName || job?.name || 'New Lead';
@@ -101,10 +102,12 @@ export default function App() {
   const [jobs, setJobs] = useState([]);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [activeTab, setActiveTab] = useState('claims');
-  const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [showArchivedJobs, setShowArchivedJobs] = useState(false);
-  const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(false);
+  const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(true);
+  const [upcomingCollapsed, setUpcomingCollapsed] = useState(false);
+  const [sourcesCollapsed, setSourcesCollapsed] = useState(false);
+  const [dashboardTab, setDashboardTab] = useState('jobs');
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [showCalendarView, setShowCalendarView] = useState(false);
   const [currentDate, setCurrentDate] = useState(getLocalDateInputValue);
@@ -154,6 +157,7 @@ export default function App() {
   const [claimMode, setClaimMode] = useState('percent');
   const [claimInputValue, setClaimInputValue] = useState('10');
   const [claimInvoiceNo, setClaimInvoiceNo] = useState('');
+  const [claimExpectedDate, setClaimExpectedDate] = useState('');
   const [editingInvoiceId, setEditingInvoiceId] = useState(null);
   const [editingInvoiceVal, setEditingInvoiceVal] = useState('');
 
@@ -468,8 +472,12 @@ export default function App() {
       percentage = totalContractExclGst > 0 ? ((finalAmount / totalContractExclGst) * 100) : 0;
     }
 
-    if (finalAmount <= 0) {
+    if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
       alert('Please enter a valid amount or percentage.');
+      return;
+    }
+    if (claimExpectedDate && !isDateKey(claimExpectedDate)) {
+      alert('Please enter a valid expected receipt date.');
       return;
     }
 
@@ -483,6 +491,7 @@ export default function App() {
       description: description,
       percentage: Number(percentage.toFixed(1)),
       amount: Number(finalAmount.toFixed(2)),
+      expectedDate: claimExpectedDate,
       invoiceNo: claimInvoiceNo.trim() || 'Pending',
       status: 'To Invoice',
       date: new Date().toLocaleDateString('en-NZ')
@@ -501,6 +510,7 @@ export default function App() {
         setClaimInputValue('25');
       }
       setClaimInvoiceNo('');
+      setClaimExpectedDate('');
       setCustomStageText('');
     } catch (err) {
       alert('Error adding claim: ' + err.message);
@@ -508,14 +518,34 @@ export default function App() {
   };
 
   const handleToggleClaimStatus = async (id) => {
+    const claim = selectedJob.claims.find(item => item.id === id);
+    if (!claim) return;
+    if (claim.status === 'Invoiced' && !window.confirm('Mark this stage as paid today? You can correct the received date using Save dates.')) return;
+    if (claim.status === 'Paid' && !window.confirm('Undo this payment? It will return to To Invoice and its received date will be cleared.')) return;
     const updated = (selectedJob.claims || []).map(c => {
       if (c.id === id) {
         const nextStatus = c.status === 'To Invoice' ? 'Invoiced' : (c.status === 'Invoiced' ? 'Paid' : 'To Invoice');
-        return { ...c, status: nextStatus };
+        return { ...c, status: nextStatus, paidDate: nextStatus === 'Paid' ? getLocalDateInputValue() : '' };
       }
       return c;
     });
-    await updateDoc(doc(db, 'jobs', selectedJob.id), { claims: updated });
+    try {
+      await updateDoc(doc(db, 'jobs', selectedJob.id), { claims: updated });
+    } catch (error) {
+      alert('Could not update payment status: ' + error.message);
+    }
+  };
+
+  const handleSaveClaimDates = async (id, dates) => {
+    const claim = selectedJob.claims.find(item => item.id === id);
+    if (!claim) throw new Error('Payment stage no longer exists.');
+    if (dates.expectedDate && !isDateKey(dates.expectedDate)) throw new Error('Enter a valid expected receipt date.');
+    if (claim.status === 'Paid' && (!isDateKey(dates.paidDate) || dates.paidDate > getLocalDateInputValue())) {
+      throw new Error('Enter a received date that is today or earlier.');
+    }
+    await updateDoc(doc(db, 'jobs', selectedJob.id), {
+      claims: selectedJob.claims.map(item => item.id === id ? { ...item, ...dates } : item)
+    });
   };
 
   const handleSaveInlineInvoiceNo = async (claimId) => {
@@ -554,11 +584,11 @@ export default function App() {
     }
   };
 
-  const filteredJobs = getJobsByStage(currentListJobs, filterStage).filter(j => {
+  const filteredJobs = currentListJobs.filter(j => {
     const matchSource = filterSource === 'all' || (j.source || 'website') === filterSource;
     return matchSource;
   });
-  const showNewLeadsSection = !showArchivedJobs && (filterStage === 'all' || filterStage === 'lead');
+  const showNewLeadsSection = !showArchivedJobs;
   const newLeadJobs = showNewLeadsSection ? filteredJobs.filter(j => !j.status || j.status === 'lead') : [];
   const otherFilteredJobs = showNewLeadsSection ? filteredJobs.filter(j => j.status && j.status !== 'lead') : filteredJobs;
 
@@ -581,7 +611,7 @@ export default function App() {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <button
-                onClick={() => setShowCalendarView(!showCalendarView)}
+                onClick={() => { setDashboardTab('jobs'); setShowCalendarView(!showCalendarView); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -604,7 +634,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setShowArchivedJobs(current => !current);
-                  setFilterStage('all');
+                  setDashboardTab('jobs');
                   setFilterSource('all');
                   setShowCalendarView(false);
                 }}
@@ -623,15 +653,30 @@ export default function App() {
             </div>
           </header>
 
+          <div role="tablist" aria-label="Dashboard views" style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            {[['jobs', 'Work Overview'], ['receipts', 'Receipts Forecast']].map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={dashboardTab === key} onClick={() => setDashboardTab(key)}
+                style={{ padding: '12px 20px', borderRadius: '9px', border: '1px solid #0284c7', background: dashboardTab === key ? '#0284c7' : '#fff', color: dashboardTab === key ? '#fff' : '#0369a1', fontWeight: '800', cursor: 'pointer' }}>{label}</button>
+            ))}
+          </div>
+          {dashboardTab === 'receipts' && <ReceiptsForecast jobs={jobs} today={currentDate} onOpenJob={id => { setSelectedJobId(id); setActiveTab('claims'); }} />}
+          {dashboardTab === 'jobs' && <>
+
           {upcomingReminders.length > 0 && (
-            <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <section style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px' }}>
+              <button type="button" aria-expanded={!upcomingCollapsed} aria-controls="upcoming-start-content" onClick={() => setUpcomingCollapsed(value => !value)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px', background: 'transparent', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer', color: '#92400e' }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <AlertTriangle size={20} color="#b45309" />
                 <span style={{ fontSize: '13px', color: '#92400e', fontWeight: '700' }}>
-                  <strong>Upcoming Start Date Alert:</strong> You have {upcomingReminders.length} project(s) scheduled to start in the next 7 days!
+                  <strong>Upcoming Start Date Alert ({upcomingReminders.length})</strong>
                 </span>
-              </div>
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                </span>
+                <ChevronDown size={19} style={{ transform: upcomingCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }} />
+              </button>
+              <div id="upcoming-start-content" hidden={upcomingCollapsed}>
+                <p style={{ fontSize: '13px', color: '#92400e', margin: '10px 0' }}>You have {upcomingReminders.length} project(s) scheduled to start in the next 7 days.</p>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {upcomingReminders.map(rem => (
                   <button
                     key={rem.id}
@@ -641,8 +686,9 @@ export default function App() {
                     {getJobName(rem)} (Starts: {rem.startDate}) →
                   </button>
                 ))}
+                </div>
               </div>
-            </div>
+            </section>
           )}
 
           {showCalendarView && (
@@ -989,13 +1035,16 @@ export default function App() {
           )}
 
           <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '14px', padding: '14px 20px', marginBottom: '20px', boxShadow: '0 1px 2px rgba(0,0,0,0.03)' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <button type="button" aria-expanded={!sourcesCollapsed} aria-controls="lead-sources-content" onClick={() => setSourcesCollapsed(value => !value)}
+              style={{ width: '100%', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px', background: 'transparent', border: 0, padding: 0, textAlign: 'left', cursor: 'pointer' }}>
               <span style={{ fontSize: '12px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#64748b', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <Globe size={14} color="#0284c7" /> Lead Sources Tracker (Website & Channels)
               </span>
-              <span style={{ fontSize: '12px', color: '#64748b' }}>{showArchivedJobs ? 'Archived Jobs:' : 'Active Jobs:'} <strong>{currentListJobs.length}</strong></span>
-            </div>
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '12px', color: '#64748b' }}>{showArchivedJobs ? 'Archived Jobs:' : 'Active Jobs:'} <strong>{currentListJobs.length}</strong><ChevronDown size={19} style={{ transform: sourcesCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)', flexShrink: 0 }} /></span>
+            </button>
+            <p style={{ margin: '6px 0', fontSize: '11px', color: '#64748b' }}>Filter: {filterSource === 'all' ? 'All Sources' : LEAD_SOURCES.find(source => source.id === filterSource)?.label || filterSource}</p>
             
+            <div id="lead-sources-content" hidden={sourcesCollapsed}>
             <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <button
                 onClick={() => setFilterSource('all')}
@@ -1039,47 +1088,7 @@ export default function App() {
                 );
               })}
             </div>
-          </div>
-
-          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
-            <button
-              onClick={() => setFilterStage('all')}
-              style={{
-                padding: '8px 16px',
-                borderRadius: '20px',
-                border: '1px solid',
-                borderColor: filterStage === 'all' ? '#0284c7' : '#cbd5e1',
-                background: filterStage === 'all' ? '#0284c7' : '#ffffff',
-                color: filterStage === 'all' ? '#ffffff' : '#475569',
-                fontWeight: '700',
-                fontSize: '13px',
-                cursor: 'pointer'
-              }}
-            >
-              All Stages ({currentListJobs.length})
-            </button>
-            {STAGES.map(s => {
-              const count = getJobsByStage(currentListJobs, s.id).length;
-              return (
-                <button
-                  key={s.id}
-                  onClick={() => setFilterStage(s.id)}
-                  style={{
-                    padding: '8px 16px',
-                    borderRadius: '20px',
-                    border: '1px solid',
-                    borderColor: filterStage === s.id ? s.color : '#cbd5e1',
-                    background: filterStage === s.id ? s.bg : '#ffffff',
-                    color: filterStage === s.id ? s.color : '#475569',
-                    fontWeight: '700',
-                    fontSize: '13px',
-                    cursor: 'pointer'
-                  }}
-                >
-                  {s.label} ({count})
-                </button>
-              );
-            })}
+            </div>
           </div>
 
           {showNewLeadsSection && (
@@ -1134,17 +1143,18 @@ export default function App() {
             </section>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          <div>
             {otherFilteredJobs.length === 0 ? (
               showNewLeadsSection && newLeadJobs.length > 0 ? null : (
               <div style={{ gridColumn: '1 / -1', background: '#ffffff', borderRadius: '12px', padding: '48px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
                 <Briefcase size={40} style={{ margin: '0 auto 12px auto' }} />
-                <h3 style={{ margin: 0, color: '#475569' }}>No jobs match current filter</h3>
-                <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Change your stage or source filter above, or click "+ New Job".</p>
+                <h3 style={{ margin: 0, color: '#475569' }}>No jobs match this source</h3>
+                <p style={{ margin: '4px 0 0 0', fontSize: '13px' }}>Choose another source or click "+ New Job".</p>
               </div>
               )
             ) : (
-              otherFilteredJobs.map(job => {
+              (showArchivedJobs ? [{ key: 'archived', label: 'Archived Jobs', open: true, jobs: otherFilteredJobs }] : groupWork(otherFilteredJobs)).map(group => (
+                <WorkGroup key={group.key} group={group} renderJob={job => {
                 const jExtras = (job.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
                 const jContract = (Number(job.contractAmount) || 0) + jExtras;
                 const jPaid = (job.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
@@ -1240,9 +1250,11 @@ export default function App() {
                     </div>
                   </div>
                 );
-              })
+                }} />
+              ))
             )}
           </div>
+          </>}
         </div>
       ) : (
         <div style={{ padding: '24px', maxWidth: '1140px', margin: '0 auto' }}>
@@ -1615,7 +1627,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: claimStageType === 'Custom' ? '1.5fr 1.5fr 1.8fr 1.2fr auto' : '1.8fr 2fr 1.2fr auto', gap: '12px', alignItems: 'center' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '12px', alignItems: 'center' }}>
                     <div>
                       <select
                         value={claimStageType}
@@ -1682,9 +1694,14 @@ export default function App() {
                       + Add Stage
                     </button>
                   </div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginTop: '12px' }}>
+                    Expected receipt date (optional)
+                    <input type="date" value={claimExpectedDate} onChange={event => setClaimExpectedDate(event.target.value)} style={{ display: 'block', padding: '9px', border: '1px solid #cbd5e1', borderRadius: '7px', marginTop: '5px' }} />
+                    <span style={{ display: 'block', marginTop: '5px', color: '#64748b', fontWeight: '400' }}>Leave blank if unknown. Undated stages appear under No date set, not in monthly totals.</span>
+                  </label>
                 </form>
 
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
@@ -1694,12 +1711,13 @@ export default function App() {
                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Incl. 15% GST</th>
                         <th style={{ padding: '12px 16px' }}>Xero Invoice #</th>
                         <th style={{ padding: '12px 16px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '12px 16px' }}>Payment dates</th>
                         <th style={{ padding: '12px 16px', width: '36px' }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {existingClaims.length === 0 ? (
-                        <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No payment stages created yet. Select "Deposit" or "Progress Claim" above to record one.</td></tr>
+                        <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No payment stages created yet. Select "Deposit" or "Progress Claim" above to record one.</td></tr>
                       ) : (
                         existingClaims.map((claim) => (
                           <tr key={claim.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -1757,6 +1775,9 @@ export default function App() {
                               >
                                 {claim.status === 'Paid' ? '✓ Paid' : (claim.status === 'Invoiced' ? '📄 Invoiced' : '⏳ To Invoice')}
                               </button>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <ClaimDates key={`${claim.id}-${claim.status}`} claim={claim} today={currentDate} onSave={handleSaveClaimDates} />
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                               <button onClick={() => handleDeleteClaim(claim.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
