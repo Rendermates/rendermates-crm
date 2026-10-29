@@ -1,5 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { getCalendarDateHighlights } from './calendar-date';
+import WorkGroup from './WorkGroup';
+import ReceiptsForecast from './ReceiptsForecast';
+import ClaimDates from './ClaimDates';
+import { groupWork, isDateKey } from './work-finance';
 import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { 
@@ -104,7 +108,8 @@ export default function App() {
   const [filterStage, setFilterStage] = useState('all');
   const [filterSource, setFilterSource] = useState('all');
   const [showArchivedJobs, setShowArchivedJobs] = useState(false);
-  const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(false);
+  const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(true);
+  const [dashboardTab, setDashboardTab] = useState('jobs');
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [showCalendarView, setShowCalendarView] = useState(false);
   const [currentDate, setCurrentDate] = useState(getLocalDateInputValue);
@@ -154,6 +159,7 @@ export default function App() {
   const [claimMode, setClaimMode] = useState('percent');
   const [claimInputValue, setClaimInputValue] = useState('10');
   const [claimInvoiceNo, setClaimInvoiceNo] = useState('');
+  const [claimExpectedDate, setClaimExpectedDate] = useState('');
   const [editingInvoiceId, setEditingInvoiceId] = useState(null);
   const [editingInvoiceVal, setEditingInvoiceVal] = useState('');
 
@@ -468,8 +474,12 @@ export default function App() {
       percentage = totalContractExclGst > 0 ? ((finalAmount / totalContractExclGst) * 100) : 0;
     }
 
-    if (finalAmount <= 0) {
+    if (!Number.isFinite(finalAmount) || finalAmount <= 0) {
       alert('Please enter a valid amount or percentage.');
+      return;
+    }
+    if (claimExpectedDate && !isDateKey(claimExpectedDate)) {
+      alert('Please enter a valid expected receipt date.');
       return;
     }
 
@@ -483,6 +493,7 @@ export default function App() {
       description: description,
       percentage: Number(percentage.toFixed(1)),
       amount: Number(finalAmount.toFixed(2)),
+      expectedDate: claimExpectedDate,
       invoiceNo: claimInvoiceNo.trim() || 'Pending',
       status: 'To Invoice',
       date: new Date().toLocaleDateString('en-NZ')
@@ -501,6 +512,7 @@ export default function App() {
         setClaimInputValue('25');
       }
       setClaimInvoiceNo('');
+      setClaimExpectedDate('');
       setCustomStageText('');
     } catch (err) {
       alert('Error adding claim: ' + err.message);
@@ -508,14 +520,34 @@ export default function App() {
   };
 
   const handleToggleClaimStatus = async (id) => {
+    const claim = selectedJob.claims.find(item => item.id === id);
+    if (!claim) return;
+    if (claim.status === 'Invoiced' && !window.confirm('Mark this stage as paid today? You can correct the received date using Save dates.')) return;
+    if (claim.status === 'Paid' && !window.confirm('Undo this payment? It will return to To Invoice and its received date will be cleared.')) return;
     const updated = (selectedJob.claims || []).map(c => {
       if (c.id === id) {
         const nextStatus = c.status === 'To Invoice' ? 'Invoiced' : (c.status === 'Invoiced' ? 'Paid' : 'To Invoice');
-        return { ...c, status: nextStatus };
+        return { ...c, status: nextStatus, paidDate: nextStatus === 'Paid' ? getLocalDateInputValue() : '' };
       }
       return c;
     });
-    await updateDoc(doc(db, 'jobs', selectedJob.id), { claims: updated });
+    try {
+      await updateDoc(doc(db, 'jobs', selectedJob.id), { claims: updated });
+    } catch (error) {
+      alert('Could not update payment status: ' + error.message);
+    }
+  };
+
+  const handleSaveClaimDates = async (id, dates) => {
+    const claim = selectedJob.claims.find(item => item.id === id);
+    if (!claim) throw new Error('Payment stage no longer exists.');
+    if (dates.expectedDate && !isDateKey(dates.expectedDate)) throw new Error('Enter a valid expected receipt date.');
+    if (claim.status === 'Paid' && (!isDateKey(dates.paidDate) || dates.paidDate > getLocalDateInputValue())) {
+      throw new Error('Enter a received date that is today or earlier.');
+    }
+    await updateDoc(doc(db, 'jobs', selectedJob.id), {
+      claims: selectedJob.claims.map(item => item.id === id ? { ...item, ...dates } : item)
+    });
   };
 
   const handleSaveInlineInvoiceNo = async (claimId) => {
@@ -581,7 +613,7 @@ export default function App() {
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
               <button
-                onClick={() => setShowCalendarView(!showCalendarView)}
+                onClick={() => { setDashboardTab('jobs'); setShowCalendarView(!showCalendarView); }}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
@@ -604,6 +636,7 @@ export default function App() {
               <button
                 onClick={() => {
                   setShowArchivedJobs(current => !current);
+                  setDashboardTab('jobs');
                   setFilterStage('all');
                   setFilterSource('all');
                   setShowCalendarView(false);
@@ -622,6 +655,15 @@ export default function App() {
               </button>
             </div>
           </header>
+
+          <div role="tablist" aria-label="Dashboard views" style={{ display: 'flex', gap: '8px', marginBottom: '20px' }}>
+            {[['jobs', 'Work Overview'], ['receipts', 'Receipts Forecast']].map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={dashboardTab === key} onClick={() => setDashboardTab(key)}
+                style={{ padding: '12px 20px', borderRadius: '9px', border: '1px solid #0284c7', background: dashboardTab === key ? '#0284c7' : '#fff', color: dashboardTab === key ? '#fff' : '#0369a1', fontWeight: '800', cursor: 'pointer' }}>{label}</button>
+            ))}
+          </div>
+          {dashboardTab === 'receipts' && <ReceiptsForecast jobs={jobs} today={currentDate} onOpenJob={id => { setSelectedJobId(id); setActiveTab('claims'); }} />}
+          {dashboardTab === 'jobs' && <>
 
           {upcomingReminders.length > 0 && (
             <div style={{ background: '#fef3c7', border: '1px solid #fde68a', borderRadius: '12px', padding: '14px 18px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
@@ -1134,7 +1176,7 @@ export default function App() {
             </section>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
+          <div>
             {otherFilteredJobs.length === 0 ? (
               showNewLeadsSection && newLeadJobs.length > 0 ? null : (
               <div style={{ gridColumn: '1 / -1', background: '#ffffff', borderRadius: '12px', padding: '48px', textAlign: 'center', border: '1px solid #e2e8f0', color: '#94a3b8' }}>
@@ -1144,7 +1186,8 @@ export default function App() {
               </div>
               )
             ) : (
-              otherFilteredJobs.map(job => {
+              (showArchivedJobs ? [{ key: 'archived', label: 'Archived Jobs', open: true, jobs: otherFilteredJobs }] : groupWork(otherFilteredJobs)).map(group => (
+                <WorkGroup key={group.key} group={group} renderJob={job => {
                 const jExtras = (job.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
                 const jContract = (Number(job.contractAmount) || 0) + jExtras;
                 const jPaid = (job.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
@@ -1240,9 +1283,11 @@ export default function App() {
                     </div>
                   </div>
                 );
-              })
+                }} />
+              ))
             )}
           </div>
+          </>}
         </div>
       ) : (
         <div style={{ padding: '24px', maxWidth: '1140px', margin: '0 auto' }}>
@@ -1615,7 +1660,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: claimStageType === 'Custom' ? '1.5fr 1.5fr 1.8fr 1.2fr auto' : '1.8fr 2fr 1.2fr auto', gap: '12px', alignItems: 'center' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '12px', alignItems: 'center' }}>
                     <div>
                       <select
                         value={claimStageType}
@@ -1682,9 +1727,14 @@ export default function App() {
                       + Add Stage
                     </button>
                   </div>
+                  <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#475569', marginTop: '12px' }}>
+                    Expected receipt date (optional)
+                    <input type="date" value={claimExpectedDate} onChange={event => setClaimExpectedDate(event.target.value)} style={{ display: 'block', padding: '9px', border: '1px solid #cbd5e1', borderRadius: '7px', marginTop: '5px' }} />
+                    <span style={{ display: 'block', marginTop: '5px', color: '#64748b', fontWeight: '400' }}>Leave blank if unknown. Undated stages appear under No date set, not in monthly totals.</span>
+                  </label>
                 </form>
 
-                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflow: 'hidden' }}>
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', overflowX: 'auto' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0', color: '#64748b' }}>
@@ -1694,12 +1744,13 @@ export default function App() {
                         <th style={{ padding: '12px 16px', textAlign: 'right' }}>Incl. 15% GST</th>
                         <th style={{ padding: '12px 16px' }}>Xero Invoice #</th>
                         <th style={{ padding: '12px 16px', textAlign: 'center' }}>Status</th>
+                        <th style={{ padding: '12px 16px' }}>Payment dates</th>
                         <th style={{ padding: '12px 16px', width: '36px' }}></th>
                       </tr>
                     </thead>
                     <tbody>
                       {existingClaims.length === 0 ? (
-                        <tr><td colSpan={7} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No payment stages created yet. Select "Deposit" or "Progress Claim" above to record one.</td></tr>
+                        <tr><td colSpan={8} style={{ padding: '32px', textAlign: 'center', color: '#94a3b8' }}>No payment stages created yet. Select "Deposit" or "Progress Claim" above to record one.</td></tr>
                       ) : (
                         existingClaims.map((claim) => (
                           <tr key={claim.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
@@ -1757,6 +1808,9 @@ export default function App() {
                               >
                                 {claim.status === 'Paid' ? '✓ Paid' : (claim.status === 'Invoiced' ? '📄 Invoiced' : '⏳ To Invoice')}
                               </button>
+                            </td>
+                            <td style={{ padding: '14px 16px' }}>
+                              <ClaimDates key={`${claim.id}-${claim.status}`} claim={claim} today={currentDate} onSave={handleSaveClaimDates} />
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'right' }}>
                               <button onClick={() => handleDeleteClaim(claim.id)} style={{ background: 'transparent', border: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}>
