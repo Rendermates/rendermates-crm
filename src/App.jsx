@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { getCalendarDateHighlights } from './calendar-date';
 import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc } from 'firebase/firestore';
 import { 
@@ -106,8 +107,28 @@ export default function App() {
   const [newLeadsCollapsed, setNewLeadsCollapsed] = useState(false);
   const [showNewJobModal, setShowNewJobModal] = useState(false);
   const [showCalendarView, setShowCalendarView] = useState(false);
-  const [calendarYear, setCalendarYear] = useState(2026);
+  const [currentDate, setCurrentDate] = useState(getLocalDateInputValue);
+  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
   const [expandedMonthIdx, setExpandedMonthIdx] = useState(null);
+
+  useEffect(() => {
+    let timer;
+    const refreshCurrentDate = () => {
+      clearTimeout(timer);
+      setCurrentDate(getLocalDateInputValue());
+      const now = new Date();
+      const nextMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+      timer = setTimeout(refreshCurrentDate, nextMidnight.getTime() - now.getTime() + 100);
+    };
+    refreshCurrentDate();
+    window.addEventListener('focus', refreshCurrentDate);
+    document.addEventListener('visibilitychange', refreshCurrentDate);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refreshCurrentDate);
+      document.removeEventListener('visibilitychange', refreshCurrentDate);
+    };
+  }, []);
 
   const [newJob, setNewJob] = useState({
     clientName: '',
@@ -672,16 +693,20 @@ export default function App() {
 
                     const hasGap = activeInMonth.length === 0;
                     const isSelected = expandedMonthIdx === mIdx;
+                    const { isCurrentMonth } = getCalendarDateHighlights(currentDate, calendarYear, mIdx);
 
                     return (
                       <div
                         key={monthName}
+                        data-current-month={isCurrentMonth ? 'true' : undefined}
                         onClick={() => setExpandedMonthIdx(isSelected ? null : mIdx)}
                         style={{
                           border: isSelected ? '2px solid #0284c7' : (hasGap ? '1px dashed #cbd5e1' : '1.5px solid #0284c7'),
                           borderRadius: '10px',
                           padding: '12px',
-                          background: isSelected ? '#eff6ff' : (hasGap ? '#f8fafc' : '#ffffff'),
+                          background: isCurrentMonth ? '#fffbeb' : (isSelected ? '#eff6ff' : (hasGap ? '#f8fafc' : '#ffffff')),
+                          outline: isCurrentMonth ? '2px solid #d97706' : 'none',
+                          outlineOffset: '2px',
                           minHeight: '85px',
                           display: 'flex',
                           flexDirection: 'column',
@@ -693,7 +718,10 @@ export default function App() {
                         }}
                       >
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <span style={{ fontWeight: '800', fontSize: '13px', color: isSelected ? '#0284c7' : '#0f172a' }}>{monthName}</span>
+                          <span style={{ fontWeight: '800', fontSize: '13px', color: isSelected ? '#0284c7' : '#0f172a' }}>
+                            {monthName}
+                            {isCurrentMonth && <span style={{ display: 'block', marginTop: '3px', fontSize: '10px', color: '#92400e' }}>Current month</span>}
+                          </span>
                           <span style={{ fontSize: '10px', fontWeight: '800', padding: '2px 6px', borderRadius: '4px', background: hasGap ? '#fef2f2' : '#dcfce7', color: hasGap ? '#dc2626' : '#15803d' }}>
                             {hasGap ? 'OPEN GAP' : `${activeInMonth.length} Job(s)`}
                           </span>
@@ -778,6 +806,9 @@ export default function App() {
                       <div>
                         <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#0f172a' }}>
                           📅 {monthName} {calendarYear} — Full Month Schedule Preview
+                          {getCalendarDateHighlights(currentDate, calendarYear, expandedMonthIdx).isCurrentMonth && (
+                            <span style={{ display: 'inline-block', marginLeft: '8px', padding: '3px 8px', borderRadius: '6px', background: '#fef3c7', color: '#92400e', fontSize: '11px', verticalAlign: 'middle' }}>Current month</span>
+                          )}
                         </h3>
                         <p style={{ margin: '3px 0 0 0', fontSize: '13px', color: '#64748b' }}>
                           <strong>{busyDaysCount}</strong> of <strong>{daysInMonth}</strong> days booked ({occupancyPct}% schedule capacity) • <strong>{daysInMonth - busyDaysCount}</strong> free days
@@ -811,13 +842,17 @@ export default function App() {
                         }
 
                         const hasJobs = cell.jobs && cell.jobs.length > 0;
+                        const { isToday } = getCalendarDateHighlights(currentDate, calendarYear, expandedMonthIdx, cell.dayNumber);
                         return (
                           <div
                             key={cell.dayNumber}
+                            aria-current={isToday ? 'date' : undefined}
                             style={{
                               minHeight: '75px',
-                              background: hasJobs ? '#ffffff' : '#f8fafc',
+                              background: isToday ? '#fffbeb' : (hasJobs ? '#ffffff' : '#f8fafc'),
                               border: hasJobs ? '1.5px solid #0284c7' : '1px dashed #cbd5e1',
+                              outline: isToday ? '2px solid #d97706' : 'none',
+                              outlineOffset: '1px',
                               borderRadius: '8px',
                               padding: '6px',
                               display: 'flex',
@@ -827,10 +862,11 @@ export default function App() {
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              <span style={{ fontSize: '12px', fontWeight: '800', color: hasJobs ? '#0f172a' : '#94a3b8' }}>
+                              <span style={{ fontSize: '12px', fontWeight: '800', color: isToday ? '#ffffff' : (hasJobs ? '#0f172a' : '#94a3b8'), background: isToday ? '#b45309' : 'transparent', borderRadius: '50%', minWidth: '24px', height: '24px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                 {cell.dayNumber}
                               </span>
-                              {!hasJobs && (
+                              {isToday && <span style={{ fontSize: '10px', fontWeight: '800', color: '#92400e' }}>Today</span>}
+                              {!hasJobs && !isToday && (
                                 <span style={{ fontSize: '9px', fontWeight: '700', color: '#94a3b8' }}>Free</span>
                               )}
                             </div>
