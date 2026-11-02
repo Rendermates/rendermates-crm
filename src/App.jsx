@@ -609,7 +609,25 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              {[
+                { label: 'Google Tasks', href: 'https://tasks.google.com/', Icon: CheckCircle2 },
+                { label: 'Google Calendar', href: 'https://calendar.google.com/', Icon: Calendar }
+              ].map(({ label, href, Icon }) => (
+                <a
+                  key={label}
+                  href={href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={`Open ${label} in a new tab`}
+                  aria-label={`${label} (opens in a new tab)`}
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: '800', fontSize: '13px', textDecoration: 'none' }}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  {label}
+                  <ExternalLink size={13} aria-hidden="true" />
+                </a>
+              ))}
               <button
                 onClick={() => { setDashboardTab('jobs'); setShowCalendarView(!showCalendarView); }}
                 style={{
