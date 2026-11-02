@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Google identity plus explicit administrative approval; never a browser flag.
+    function approvedGoogleIdentity() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'google.com'
+        && request.auth.token.email_verified == true
+        && request.auth.token.email.lower() in [
+          'info@rendermates.co.nz',
+          'rendermatesnz@gmail.com'
+        ];
+    }
+
+    function canUseCrm() {
+      return approvedGoogleIdentity()
+        && exists(/databases/$(database)/documents/_crmAccess/$(request.auth.token.email.lower()))
+        && get(/databases/$(database)/documents/_crmAccess/$(request.auth.token.email.lower())).data.enabled == true;
+    }
+
+    match /jobs/{jobId} {
+      allow read, delete: if canUseCrm();
+      // Sync status is server-owned, even for authorized CRM users.
+      allow create: if canUseCrm() && !('calendarSync' in request.resource.data);
+      allow update: if canUseCrm()
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['calendarSync']);
+    }
+
+    match /_crmAccess/{email} {
+      // Needed to display own approval/revocation status, never a list of users.
+      allow get: if approvedGoogleIdentity() && request.auth.token.email.lower() == email;
+      allow list, write: if false;
+    }
+
+    // Includes _calendarSyncState, _calendarSyncControl and every other collection.
+    // Replace the old permissive wildcard; adding a deny beside it is not enough.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
