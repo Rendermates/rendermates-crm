@@ -220,7 +220,7 @@ export default function App() {
       setJobEndDate(incoming.endDate);
       setScheduleEditorBase(incoming);
     }
-  }, [selectedJobId, selectedJob?.startDate, selectedJob?.endDate, scheduleEditorBase, jobStartDate, jobEndDate]);
+  }, [selectedJob, scheduleEditorBase, jobStartDate, jobEndDate]);
 
   const scheduleChangedElsewhere = selectedJob && scheduleEditorBase?.id === selectedJob.id &&
     (scheduleEditorBase.startDate !== (selectedJob.startDate || '') ||
