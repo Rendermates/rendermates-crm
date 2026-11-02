@@ -1,0 +1,8 @@
+{
+  "functions": [{
+    "source": "functions",
+    "codebase": "calendar-sync",
+    "runtime": "nodejs22",
+    "ignore": ["node_modules", "test", "*.log", ".env*", ".secret*"]
+  }]
+}
