@@ -610,24 +610,18 @@ export default function App() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              {[
-                { label: 'Google Tasks', href: 'https://tasks.google.com/', Icon: CheckCircle2 },
-                { label: 'Google Calendar', href: 'https://calendar.google.com/', Icon: Calendar }
-              ].map(({ label, href, Icon }) => (
                 <a
-                  key={label}
-                  href={href}
+                  href="https://tasks.google.com/"
                   target="_blank"
                   rel="noopener noreferrer"
-                  title={`Open ${label} in a new tab`}
-                  aria-label={`${label} (opens in a new tab)`}
+                  title="Open Google Tasks in a new tab"
+                  aria-label="Google Tasks (opens in a new tab)"
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: '800', fontSize: '13px', textDecoration: 'none' }}
                 >
-                  <Icon size={17} aria-hidden="true" />
-                  {label}
+                  <CheckCircle2 size={17} aria-hidden="true" />
+                  Google Tasks
                   <ExternalLink size={13} aria-hidden="true" />
                 </a>
-              ))}
               <button
                 onClick={() => { setDashboardTab('jobs'); setShowCalendarView(!showCalendarView); }}
                 style={{
@@ -719,6 +713,12 @@ export default function App() {
                   <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>
                     Click on any month below to open the complete Day-by-Day schedule preview.
                   </p>
+                  <a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer"
+                    aria-label="Open in Google Calendar (opens in a new tab)"
+                    title="Opens Google Calendar in a new tab; automatic synchronization is not yet enabled"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '10px', color: '#0284c7', fontSize: '12px', fontWeight: '700' }}>
+                    Open in Google Calendar <ExternalLink size={13} aria-hidden="true" />
+                  </a>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button onClick={() => setCalendarYear(calendarYear - 1)} style={{ background: '#f1f5f9', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '800' }}><ChevronLeft size={16} /></button>
