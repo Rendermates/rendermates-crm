@@ -2,9 +2,10 @@
 
 ## Current status
 
-Implemented and locally tested, **not deployed or enabled**. No live CRM
-document has been changed by this implementation. Google already contains an
-initial copy of 11 dated jobs from a separate, earlier migration.
+Implemented and locally tested. The first real installation was **incomplete**;
+synchronization remains **disabled**. No live CRM document has been changed by
+this implementation. Google already contains an initial copy of 11 dated jobs
+from a separate, earlier migration.
 
 This is a Firebase backend, not a Vercel API. Merging this PR or deploying the
 Vite frontend **does not deploy or activate these functions**.
@@ -49,11 +50,14 @@ This PR is stacked on the Google-shortcuts PR. Merge the parent first.
 1. Confirm the Firebase project is `rendermates-crm`. Confirm Blaze billing and
    the Firestore location before deploying. Cloud Functions, Eventarc, Cloud
    Scheduler, Cloud Build, Artifact Registry and IAM Credentials APIs must be
-   available; review their costs and set budget alerts. Functions use
-   `australia-southeast2` (Melbourne), matching the existing Firestore location
-   reported by the administrator's read-only Cloud Shell check. Billing was
-   also reported enabled. Reconfirm the target before deploying. Do not move
-   or recreate the existing database.
+   available; review their costs and set budget alerts. The Firestore trigger
+   uses `australia-southeast2` (Melbourne), matching the existing database.
+   The scheduled function uses `australia-southeast1` (Sydney): Cloud Scheduler
+   does not support Melbourne. The business timezone remains `Pacific/Auckland`,
+   which also covers Wellington and its daylight-saving changes.
+   See https://docs.cloud.google.com/scheduler/docs/locations.
+   Billing was reported enabled. Reconfirm the target before deploying.
+   Do not move or recreate the existing database.
 2. Use a reviewed deployment identity with permission to deploy functions,
    configure their service accounts and create the scheduler/trigger resources.
    This sandbox currently has **no authenticated gcloud/Firebase deployment
@@ -145,6 +149,18 @@ Do not enable production jobs simply because the local tests pass.
 - Re-enabling with preserved baselines detects intervening conflicting edits.
 
 ## Verification scope
+
+The first real installation attempt was incomplete: the Firestore trigger
+reported Eventarc service-agent permissions/propagation, and the scheduler
+rejected the former Melbourne location. Do not treat local tests or a dry run
+as proof of a successful deployment. Inspect live function state before retrying.
+An inactive `calendarReconcile` function may already exist in Melbourne; changing
+its region can prompt for its deletion. Confirm its identity and disabled state,
+and obtain explicit approval before deleting that partial installation.
+
+Deployment region tests inspect the Firebase SDK endpoint metadata directly:
+Melbourne for the Firestore trigger, Sydney for the scheduled function, and
+`Pacific/Auckland` for the schedule timezone. They make no cloud requests.
 
 Node 22 unit tests use an in-memory transactional Firestore fixture and mocked
 Calendar transport. They test both directions, narrow writes, bootstrap,

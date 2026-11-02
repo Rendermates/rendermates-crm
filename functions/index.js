@@ -9,8 +9,10 @@ const enabled = defineBoolean('CALENDAR_SYNC_ENABLED', { default: false });
 const allowed = defineString('CALENDAR_SYNC_JOB_IDS', { default: '' });
 const calendarId = defineString('GOOGLE_CALENDAR_ID', { default: '' });
 const writer = defineString('GOOGLE_CALENDAR_WRITER', { default: '' });
-// Match the existing Firestore database location (Melbourne).
-const region = 'australia-southeast2';
+// The Firestore trigger stays beside the existing database in Melbourne.
+const firestoreRegion = 'australia-southeast2';
+// Cloud Scheduler supports Sydney, not Melbourne. This is not the business timezone.
+const schedulerRegion = 'australia-southeast1';
 // This identity must be provisioned and reviewed before deployment.
 const serviceAccount = 'crm-calendar-sync@rendermates-crm.iam.gserviceaccount.com';
 let clients;
@@ -34,7 +36,7 @@ async function reconcile(id) {
 }
 
 export const calendarJobDatesChanged = onDocumentWritten({
-  document: 'jobs/{jobId}', region, serviceAccount,
+  document: 'jobs/{jobId}', region: firestoreRegion, serviceAccount,
   maxInstances: 2, concurrency: 1, timeoutSeconds: 120, retry: true
 }, async event => {
   if (!event.data?.after.exists || !await ready()) return;
@@ -46,7 +48,7 @@ export const calendarJobDatesChanged = onDocumentWritten({
 });
 
 export const calendarReconcile = onSchedule({
-  schedule: 'every 5 minutes', timeZone: 'Pacific/Auckland', region,
+  schedule: 'every 5 minutes', timeZone: 'Pacific/Auckland', region: schedulerRegion,
   serviceAccount, timeoutSeconds: 300, maxInstances: 1, retryCount: 3
 }, async () => {
   if (!await ready()) return;
