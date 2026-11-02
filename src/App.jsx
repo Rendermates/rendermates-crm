@@ -3,9 +3,10 @@ import { getCalendarDateHighlights } from './calendar-date';
 import WorkGroup from './WorkGroup';
 import ReceiptsForecast from './ReceiptsForecast';
 import ClaimDates from './ClaimDates';
+import CalendarSyncNotice from './CalendarSyncNotice';
 import { groupWork, isDateKey } from './work-finance';
 import { db } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, runTransaction } from 'firebase/firestore';
 import { 
   Plus, Phone, MapPin, DollarSign, PlusCircle, Trash2, X, FileText, 
   FileUp, Check, Zap, Eye, ExternalLink, Edit2, CheckCircle2, Clock, 
@@ -166,6 +167,7 @@ export default function App() {
   const [visitNotes, setVisitNotes] = useState('');
   const [jobStartDate, setJobStartDate] = useState('');
   const [jobEndDate, setJobEndDate] = useState('');
+  const [scheduleEditorBase, setScheduleEditorBase] = useState(null);
 
   useEffect(() => {
     if (!window.pdfjsLib) {
@@ -197,10 +199,32 @@ export default function App() {
       setVisitDate(selectedJob.siteVisitDate || '');
       setVisitTime(selectedJob.siteVisitTime || '09:00');
       setVisitNotes(selectedJob.siteVisitNotes || '');
-      setJobStartDate(selectedJob.startDate || '');
-      setJobEndDate(selectedJob.endDate || '');
     }
   }, [selectedJobId]);
+
+  // Refresh clean date fields when Google/another device changes the schedule.
+  // Preserve an unsaved draft and require review if the remote dates diverge.
+  useEffect(() => {
+    if (!selectedJob) return;
+    const incoming = {
+      id: selectedJob.id, startDate: selectedJob.startDate || '', endDate: selectedJob.endDate || ''
+    };
+    if (scheduleEditorBase?.id === incoming.id &&
+        scheduleEditorBase.startDate === incoming.startDate &&
+        scheduleEditorBase.endDate === incoming.endDate) return;
+    const clean = !scheduleEditorBase || scheduleEditorBase.id !== incoming.id ||
+      (jobStartDate === scheduleEditorBase.startDate && jobEndDate === scheduleEditorBase.endDate);
+    const draftMatchesRemote = jobStartDate === incoming.startDate && jobEndDate === incoming.endDate;
+    if (clean || draftMatchesRemote) {
+      setJobStartDate(incoming.startDate);
+      setJobEndDate(incoming.endDate);
+      setScheduleEditorBase(incoming);
+    }
+  }, [selectedJob, scheduleEditorBase, jobStartDate, jobEndDate]);
+
+  const scheduleChangedElsewhere = selectedJob && scheduleEditorBase?.id === selectedJob.id &&
+    (scheduleEditorBase.startDate !== (selectedJob.startDate || '') ||
+     scheduleEditorBase.endDate !== (selectedJob.endDate || ''));
 
   const bookedJobs = getBookedJobs(activeJobs);
 
@@ -254,11 +278,28 @@ export default function App() {
   const handleSaveJobDates = async (e) => {
     e.preventDefault();
     if (!selectedJob) return;
+    if (scheduleChangedElsewhere || !scheduleEditorBase) {
+      alert('The schedule changed elsewhere. Reload the latest dates before saving.');
+      return;
+    }
+    if (!isDateKey(jobStartDate) || !isDateKey(jobEndDate) || jobStartDate > jobEndDate) {
+      alert('Choose valid dates with the end on or after the start.');
+      return;
+    }
     try {
-      await updateDoc(doc(db, 'jobs', selectedJob.id), {
-        startDate: jobStartDate,
-        endDate: jobEndDate,
-        status: selectedJob.status === 'lead' || selectedJob.status === 'quoted' ? 'booked' : selectedJob.status
+      await runTransaction(db, async transaction => {
+        const ref = doc(db, 'jobs', selectedJob.id);
+        const snapshot = await transaction.get(ref);
+        if (!snapshot.exists()) throw new Error('This job no longer exists.');
+        const current = snapshot.data();
+        if ((current.startDate || '') !== scheduleEditorBase.startDate ||
+            (current.endDate || '') !== scheduleEditorBase.endDate) {
+          throw new Error('The schedule changed elsewhere. Reload the latest dates before saving.');
+        }
+        transaction.update(ref, {
+          startDate: jobStartDate, endDate: jobEndDate,
+          status: ['lead', 'quoted'].includes(current.status) ? 'booked' : current.status
+        });
       });
       alert('Job Schedule updated & linked to Annual Calendar!');
     } catch (err) {
@@ -320,6 +361,8 @@ export default function App() {
   };
 
   const generateJobCalendarUrl = (job) => {
+    // Once the backend manages a job, never offer a duplicate-event template.
+    if (job?.calendarSync) return 'https://calendar.google.com/';
     if (!job || !job.startDate || !job.endDate) return '#';
     const startIso = job.startDate.replace(/-/g, '');
     const endDateObj = new Date(job.endDate);
@@ -609,7 +652,19 @@ export default function App() {
               </div>
             </div>
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <a
+                  href="https://tasks.google.com/"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title="Open Google Tasks in a new tab"
+                  aria-label="Google Tasks (opens in a new tab)"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '8px', padding: '10px 16px', borderRadius: '8px', border: '1px solid #cbd5e1', background: '#ffffff', color: '#334155', fontWeight: '800', fontSize: '13px', textDecoration: 'none' }}
+                >
+                  <CheckCircle2 size={17} aria-hidden="true" />
+                  Google Tasks
+                  <ExternalLink size={13} aria-hidden="true" />
+                </a>
               <button
                 onClick={() => { setDashboardTab('jobs'); setShowCalendarView(!showCalendarView); }}
                 style={{
@@ -701,6 +756,12 @@ export default function App() {
                   <p style={{ margin: '4px 0 0 0', color: '#64748b', fontSize: '13px' }}>
                     Click on any month below to open the complete Day-by-Day schedule preview.
                   </p>
+                  <a href="https://calendar.google.com/" target="_blank" rel="noopener noreferrer"
+                    aria-label="Open in Google Calendar (opens in a new tab)"
+                    title="Opens Google Calendar in a new tab; automatic synchronization is not yet enabled"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', marginTop: '10px', color: '#0284c7', fontSize: '12px', fontWeight: '700' }}>
+                    Open in Google Calendar <ExternalLink size={13} aria-hidden="true" />
+                  </a>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <button onClick={() => setCalendarYear(calendarYear - 1)} style={{ background: '#f1f5f9', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '800' }}><ChevronLeft size={16} /></button>
@@ -708,6 +769,8 @@ export default function App() {
                   <button onClick={() => setCalendarYear(calendarYear + 1)} style={{ background: '#f1f5f9', border: 'none', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: '800' }}><ChevronRight size={16} /></button>
                 </div>
               </div>
+
+              <CalendarSyncNotice jobs={jobs} onOpenJob={id => { setSelectedJobId(id); setActiveTab('site_visit'); }} />
 
               {/* 12 MESES CLICÁVEIS */}
               <div>
@@ -1494,8 +1557,18 @@ export default function App() {
                       </div>
                     </div>
 
+                    {scheduleChangedElsewhere && (
+                      <div role="alert" style={{ padding: '10px', marginBottom: '10px', background: '#fffbeb', color: '#92400e', fontSize: '12px', borderRadius: '8px' }}>
+                        The schedule changed elsewhere. Your unsaved dates have been kept. Reload the latest dates before saving.
+                        <button type="button" onClick={() => {
+                          const latest = { id: selectedJob.id, startDate: selectedJob.startDate || '', endDate: selectedJob.endDate || '' };
+                          setJobStartDate(latest.startDate); setJobEndDate(latest.endDate); setScheduleEditorBase(latest);
+                        }} style={{ display: 'block', marginTop: '8px', cursor: 'pointer' }}>Reload latest dates</button>
+                      </div>
+                    )}
                     <button
                       type="submit"
+                      disabled={Boolean(scheduleChangedElsewhere)}
                       style={{ width: '100%', background: '#0284c7', color: '#ffffff', border: 'none', padding: '11px', borderRadius: '8px', fontWeight: '800', fontSize: '13px', cursor: 'pointer', marginBottom: '10px' }}
                     >
                       Save Booked Dates & Add to Annual Calendar
@@ -1520,7 +1593,7 @@ export default function App() {
                           fontSize: '12px'
                         }}
                       >
-                        <Calendar size={14} /> Add Scheduled Project to Google Calendar
+                        <Calendar size={14} /> {selectedJob.calendarSync ? 'Open Google Calendar' : 'Add Scheduled Project to Google Calendar'}
                       </a>
                     )}
                   </form>
