@@ -1,0 +1,19 @@
+{
+  "name": "rendermates-crm-security-tests",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.12"
+  },
+  "scripts": {
+    "test": "firebase emulators:exec --config ../firebase.security.json --project demo-rendermates-crm --only firestore 'node --test rules.test.js'"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^6.0.0",
+    "firebase": "^13.1.0",
+    "firebase-tools": "^15.34.2"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.13.6"
+  }
+}
