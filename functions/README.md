@@ -153,7 +153,7 @@ approval, administrator ADC in Cloud Shell, and a cooperating Calendar operator
 in the conversation. It does not grant temporary IAM access or delete the old
 Melbourne function.
 
-The reviewed helper enables only `crm-sync-pilot-20261103`, verifies both deployed
+The reviewed helper enables only `crm-sync-pilot-20261103b`, verifies both deployed
 allowlists, creates a visibly fictitious record without a customer address,
 checks two outgoing schedules, and waits for the operator to change only that
 event to November 23–24, 2026 (Google exclusive end November 25). A final outgoing

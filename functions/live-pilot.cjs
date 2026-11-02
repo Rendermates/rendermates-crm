@@ -7,7 +7,7 @@ const { createHash, randomUUID } = require('node:crypto');
 const assert = require('node:assert/strict');
 
 const PROJECT = 'rendermates-crm';
-const PILOT = 'crm-sync-pilot-20261103';
+const PILOT = 'crm-sync-pilot-20261103b';
 const CALENDAR = 'b8bd496115a7f8f2f35909f0726505d46bc9410c26e1a4e7a47061fff1921ac3@group.calendar.google.com';
 const ROOT = path.resolve(__dirname, '..');
 const ENVFILE = path.join(__dirname, '.env.rendermates-crm');
@@ -154,13 +154,16 @@ async function main() {
     console.log('PILOT 1/4: publicando somente o ID fictício; funções antigas serão preservadas.');
     deploy();
     verifyDeployment(true, PILOT);
-    stage = 'crm_para_google';
+    stage = 'criacao_crm_para_google';
     console.log('PILOT 2/4: verificando criação e alteração de datas pelo backend real.');
     await job.update(A);
     await waitFor(A, 180);
+    console.log('PILOT: criação no Google e confirmação no Firestore concluídas.');
+    stage = 'alteracao_crm_para_google';
     await job.update(B);
     const outgoing = await waitFor(B, 180);
     assert.equal(digest(businessData(outgoing)), digest(fixture));
+    console.log('PILOT: segunda alteração CRM → Google confirmada.');
     stage = 'google_para_crm';
     console.log('PILOT 3/4: aguardando alteração isolada no Google; nenhum trabalho real está habilitado.');
     const incoming = await waitFor(C, 600, true);

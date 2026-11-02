@@ -8,7 +8,7 @@ const realRequire = createRequire(import.meta.url);
 const source = fs.readFileSync(new URL('../live-pilot.cjs', import.meta.url), 'utf8')
   .replace("await import('./runtime.js')", 'await globalThis.mockRuntime()') +
   '\nmodule.exports.main = main;';
-const id = 'crm-sync-pilot-20261103';
+const id = 'crm-sync-pilot-20261103b';
 const calendar = 'b8bd496115a7f8f2f35909f0726505d46bc9410c26e1a4e7a47061fff1921ac3@group.calendar.google.com';
 
 async function scenario(mode) {

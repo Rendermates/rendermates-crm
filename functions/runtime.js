@@ -5,8 +5,10 @@ import { calendarClient } from './calendar-client.js';
 import { firestoreStore } from './firestore-store.js';
 
 export function database() {
-  if (!getApps().length) initializeApp();
-  return getFirestore();
+  // Firestore event decoding may create only __FIREBASE_FUNCTIONS_SDK__.
+  // A named SDK app does not mean the default application exists.
+  const app = getApps().find(app => app.name === '[DEFAULT]') || initializeApp();
+  return getFirestore(app);
 }
 
 export async function dependencies(calendarId, writer) {
