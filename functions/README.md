@@ -2,10 +2,18 @@
 
 ## Current status
 
-Implemented and locally tested. The first real installation was **incomplete**;
-synchronization remains **disabled**. No live CRM document has been changed by
-this implementation. Google already contains an initial copy of 11 dated jobs
-from a separate, earlier migration.
+Implemented and locally tested. After correcting the scheduler region and
+Eventarc setup, administrator Cloud Shell reported **Deploy complete**. The
+scheduled function was confirmed ACTIVE with sync false and an empty allowlist;
+Scheduler was confirmed enabled every five minutes in Pacific/Auckland.
+Synchronization remains **disabled**.
+
+The owner-approved bootstrap subsequently reported `initialized: true` and
+`adopt: 11`; its temporary writer-impersonation permission was removed. This
+initializes additive synchronization metadata, not real date synchronization.
+Google already contained the 11 dated events from a separate, earlier migration.
+The dedicated runtime was explicitly granted Invoker only on the Firestore
+trigger's Cloud Run service after the owner approved that narrow permission.
 
 This is a Firebase backend, not a Vercel API. Merging this PR or deploying the
 Vite frontend **does not deploy or activate these functions**.
@@ -137,6 +145,41 @@ Do not enable production jobs simply because the local tests pass.
 
 ## Conflict recovery and rollback
 
+### Operator-assisted isolated acceptance test
+
+`node functions/live-pilot.cjs` is a one-shot live test for the current rollout,
+not an unattended production activation command. It requires explicit owner
+approval, administrator ADC in Cloud Shell, and a cooperating Calendar operator
+in the conversation. It does not grant temporary IAM access or delete the old
+Melbourne function.
+
+The reviewed helper enables only `crm-sync-pilot-20261103`, verifies both deployed
+allowlists, creates a visibly fictitious record without a customer address,
+checks two outgoing schedules, and waits for the operator to change only that
+event to November 23–24, 2026 (Google exclusive end November 25). A final outgoing
+November 25–26 schedule acknowledges the verified incoming leg. The operator
+then removes that same fictitious Google event. No personal-calendar operation
+is needed.
+
+The helper requests the existing Scheduler job while awaiting the incoming leg,
+so this proves real worker execution, not natural five-minute dispatch timing.
+It restores the original disabled configuration in `finally`, verifies deployed
+flags, removes only its nonce-owned test record/metadata once disabled, and
+compares hashes of pre-existing records without printing customer data. Failed
+remote shutdown is reported and leaves the fictitious record for diagnosis.
+Process termination or an unavailable cloud API can prevent cleanup; never
+infer shutdown from the local environment file alone.
+
+The Firebase CLI is pinned to 15.34.2. The helper overrides only its deletion
+decision to **retain every existing function**, including the old Melbourne
+resource; all other security/authentication checks remain in place. Do not use
+`--force`. Existing PR media remains applicable: this adds an acceptance-test
+harness, not a new application handler or frontend flow.
+
+The fixed event ID is single-use after deletion (Google may retain a tombstone).
+Do not blindly rerun this helper or reset baselines; a later run needs a newly
+reviewed fictitious ID coordinated with the Calendar operator.
+
 - Compare the work's dates on both sides. Set both to the agreed dates;
   reconciliation will adopt that pair and clear the notice.
 - Restore a deleted Google event if it should remain linked. Known deleted
@@ -150,13 +193,15 @@ Do not enable production jobs simply because the local tests pass.
 
 ## Verification scope
 
-The first real installation attempt was incomplete: the Firestore trigger
-reported Eventarc service-agent permissions/propagation, and the scheduler
-rejected the former Melbourne location. Do not treat local tests or a dry run
-as proof of a successful deployment. Inspect live function state before retrying.
-An inactive `calendarReconcile` function may already exist in Melbourne; changing
-its region can prompt for its deletion. Confirm its identity and disabled state,
-and obtain explicit approval before deleting that partial installation.
+The first installation was incomplete due to Eventarc service-agent setup and
+the unsupported Melbourne Scheduler location. The later corrected installation
+and metadata bootstrap succeeded as reported above. These observations do not
+establish successful two-way synchronization: the isolated live pilot remains
+pending until its actual results are collected.
+
+The inactive old `calendarReconcile` in Melbourne was deliberately preserved.
+Changing its region can prompt for deletion; obtain explicit approval before
+deleting that partial installation. The pilot helper never deletes it.
 
 Deployment region tests inspect the Firebase SDK endpoint metadata directly:
 Melbourne for the Firestore trigger, Sydney for the scheduled function, and
