@@ -9,7 +9,8 @@ const enabled = defineBoolean('CALENDAR_SYNC_ENABLED', { default: false });
 const allowed = defineString('CALENDAR_SYNC_JOB_IDS', { default: '' });
 const calendarId = defineString('GOOGLE_CALENDAR_ID', { default: '' });
 const writer = defineString('GOOGLE_CALENDAR_WRITER', { default: '' });
-const region = 'australia-southeast1';
+// Match the existing Firestore database location (Melbourne).
+const region = 'australia-southeast2';
 // This identity must be provisioned and reviewed before deployment.
 const serviceAccount = 'crm-calendar-sync@rendermates-crm.iam.gserviceaccount.com';
 let clients;

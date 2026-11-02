@@ -50,8 +50,10 @@ This PR is stacked on the Google-shortcuts PR. Merge the parent first.
    the Firestore location before deploying. Cloud Functions, Eventarc, Cloud
    Scheduler, Cloud Build, Artifact Registry and IAM Credentials APIs must be
    available; review their costs and set budget alerts. Functions use
-   `australia-southeast1`; change before initial deployment if necessary for
-   the actual Firestore region. Do not move or recreate the existing database.
+   `australia-southeast2` (Melbourne), matching the existing Firestore location
+   reported by the administrator's read-only Cloud Shell check. Billing was
+   also reported enabled. Reconfirm the target before deploying. Do not move
+   or recreate the existing database.
 2. Use a reviewed deployment identity with permission to deploy functions,
    configure their service accounts and create the scheduler/trigger resources.
    This sandbox currently has **no authenticated gcloud/Firebase deployment
