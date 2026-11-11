@@ -1,0 +1,45 @@
+name: CRM validation
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  app:
+    name: App and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            functions/package-lock.json
+            crm-automation/package-lock.json
+      - run: npm ci && npm ci --prefix functions && npm ci --prefix crm-automation
+      - run: node --test tests/*.test.js
+      - run: npm --prefix functions test
+      - run: npm --prefix crm-automation test
+      - run: npm run lint && npm run build
+      - run: node --check crm-automation/index.js
+  access:
+    name: Firestore access and automation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            security/package-lock.json
+            crm-automation/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - run: npm ci --prefix security && npm ci --prefix crm-automation
+      - run: npm --prefix security test

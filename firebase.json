@@ -1,8 +1,16 @@
 {
-  "functions": [{
-    "source": "functions",
-    "codebase": "calendar-sync",
-    "runtime": "nodejs22",
-    "ignore": ["node_modules", "test", "*.log", ".env*", ".secret*"]
-  }]
+  "functions": [
+    {
+      "source": "functions",
+      "codebase": "calendar-sync",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", "test", "*.log", ".env*", ".secret*"]
+    },
+    {
+      "source": "crm-automation",
+      "codebase": "crm-automation",
+      "runtime": "nodejs22",
+      "ignore": ["node_modules", "test", "*.log", ".env*", ".secret*"]
+    }
+  ]
 }

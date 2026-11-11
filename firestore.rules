@@ -1,39 +1,132 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Google identity plus explicit administrative approval; never a browser flag.
-    function approvedGoogleIdentity() {
+    function googleIdentity() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == 'google.com'
-        && request.auth.token.email_verified == true
-        && request.auth.token.email.lower() in [
-          'info@rendermates.co.nz',
-          'rendermatesnz@gmail.com'
-        ];
+        && request.auth.token.email_verified == true;
     }
-
+    function email() { return request.auth.token.email.lower(); }
+    function legacyOwner(identity) {
+      return identity in ['info@rendermates.co.nz', 'rendermatesnz@gmail.com'];
+    }
+    function membership() {
+      return get(/databases/$(database)/documents/_crmAccess/$(email())).data;
+    }
+    function role() {
+      return membership().get('role', legacyOwner(email()) ? 'admin' : '');
+    }
     function canUseCrm() {
-      return approvedGoogleIdentity()
+      return googleIdentity()
         && exists(/databases/$(database)/documents/_crmAccess/$(request.auth.token.email.lower()))
-        && get(/databases/$(database)/documents/_crmAccess/$(request.auth.token.email.lower())).data.enabled == true;
+        && membership().enabled == true && role() in ['admin', 'manager', 'sales'];
     }
-
+    function manager() { return canUseCrm() && role() in ['admin', 'manager']; }
+    function canSee(data) {
+      return canUseCrm() && (manager() || data.get('assignedTo', '') == email());
+    }
+    function canSeeJob(id) {
+      return exists(/databases/$(database)/documents/jobs/$(id))
+        && canSee(get(/databases/$(database)/documents/jobs/$(id)).data);
+    }
+    function assignable(who) {
+      return who == '' || (who is string
+        && exists(/databases/$(database)/documents/_crmAccess/$(who))
+        && get(/databases/$(database)/documents/_crmAccess/$(who)).data.enabled == true
+        && get(/databases/$(database)/documents/_crmAccess/$(who)).data.get('role',
+          legacyOwner(who) ? 'admin' : '') in ['admin', 'manager', 'sales']);
+    }
+    function validLoss(data) {
+      return data.get('status', 'lead') != 'lost' ||
+        (data.get('lossReason', '') in ['Price', 'Budget', 'Timing', 'Competitor', 'No response', 'Outside service area', 'Other']
+        && data.get('lossNotes', '') is string
+        && (data.lossReason != 'Other' || data.lossNotes.matches('(?s).*\\S.*')));
+    }
+    function consentEntry(entry, old) {
+      return entry is map && entry.get('optIn', false) is bool
+        && (entry.get('optIn', false) != true || (entry.get('source', '') is string && entry.get('source', '').matches('(?s).*\\S.*')))
+        && (entry == old || (entry.get('recordedBy', '') == email() && entry.get('recordedAt', '') is string));
+    }
+    function validConsent(data, old) {
+      let prefs = data.get('contactPreferences', {});
+      let previous = old.get('contactPreferences', {});
+      return prefs is map && prefs.keys().hasOnly(['maintenance', 'marketing', 'follow_up'])
+        && consentEntry(prefs.get('maintenance', {}), previous.get('maintenance', {}))
+        && consentEntry(prefs.get('marketing', {}), previous.get('marketing', {}))
+        && consentEntry(prefs.get('follow_up', {}), previous.get('follow_up', {}));
+    }
     match /jobs/{jobId} {
-      allow read, delete: if canUseCrm();
-      // Sync status is server-owned, even for authorized CRM users.
-      allow create: if canUseCrm() && !('calendarSync' in request.resource.data);
-      allow update: if canUseCrm()
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['calendarSync']);
-    }
+      allow read: if canSee(resource.data);
+      allow delete: if manager();
+      allow create: if canUseCrm() && !('calendarSync' in request.resource.data)
+        && (manager() || request.resource.data.get('assignedTo', '') == email())
+        && assignable(request.resource.data.get('assignedTo', ''))
+        && validLoss(request.resource.data) && validConsent(request.resource.data, {});
+      allow update: if canSee(resource.data)
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['calendarSync'])
+        && (manager() || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['assignedTo']))
+        && assignable(request.resource.data.get('assignedTo', ''))
+        && validLoss(request.resource.data) && validConsent(request.resource.data, resource.data);
 
+      match /messages/{messageId} {
+        allow read: if canSeeJob(jobId);
+        allow create: if canSeeJob(jobId)
+          && request.resource.data.keys().hasOnly(['type', 'text', 'actor', 'createdAt', 'source'])
+          && request.resource.data.type in ['note', 'incoming_logged']
+          && request.resource.data.actor == email()
+          && request.resource.data.source == 'CRM manual log'
+          && request.resource.data.text is string && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 20000 && request.resource.data.createdAt is string;
+        allow update, delete: if false;
+      }
+      match /activity/{activityId} {
+        allow read: if canSeeJob(jobId);
+        allow create: if canSeeJob(jobId)
+          && request.resource.data.keys().hasOnly(['type', 'text', 'actor', 'createdAt'])
+          && request.resource.data.type in ['profile', 'status']
+          && request.resource.data.actor == email() && request.resource.data.createdAt is string
+          && request.resource.data.text is string && request.resource.data.text.size() <= 5000;
+        allow update, delete: if false;
+      }
+    }
     match /_crmAccess/{email} {
-      // Needed to display own approval/revocation status, never a list of users.
-      allow get: if approvedGoogleIdentity() && request.auth.token.email.lower() == email;
+      // Own membership is discoverable after verified Google login; it never grants itself access.
+      allow get: if googleIdentity() && request.auth.token.email.lower() == email;
       allow list, write: if false;
     }
-
-    // Includes _calendarSyncState, _calendarSyncControl and every other collection.
-    // Replace the old permissive wildcard; adding a deny beside it is not enough.
+    match /crmTasks/{taskId} {
+      function validTask(data) {
+        return data.keys().hasAll(['title', 'jobId', 'assignedTo', 'dueAt', 'status', 'createdBy', 'createdAt'])
+          && data.keys().hasOnly(['title', 'jobId', 'assignedTo', 'dueAt', 'status', 'createdBy', 'createdAt', 'updatedAt'])
+          && data.title is string && data.title.size() > 0 && data.title.size() <= 500
+          && data.dueAt is string && data.status in ['open', 'done']
+          && data.assignedTo != '' && assignable(data.assignedTo);
+      }
+      allow read: if canUseCrm() && (manager() || resource.data.assignedTo == email());
+      allow create: if canUseCrm() && validTask(request.resource.data)
+        && request.resource.data.createdBy == email() && canSeeJob(request.resource.data.jobId)
+        && (manager() || request.resource.data.assignedTo == email());
+      allow update: if canUseCrm() && validTask(request.resource.data)
+        && (manager() || (resource.data.assignedTo == email() && request.resource.data.assignedTo == email()))
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['jobId', 'createdBy', 'createdAt']);
+      allow delete: if manager();
+    }
+    match /crmEmailRules/{ruleId} {
+      allow read: if manager();
+      allow create, update: if manager()
+        && request.resource.data.kind in ['maintenance', 'marketing', 'follow_up']
+        && request.resource.data.enabled is bool && request.resource.data.name is string;
+      allow delete: if manager();
+    }
+    match /crmEmailOutbox/{deliveryId} {
+      allow read: if manager();
+      allow write: if false;
+    }
+    match /_crmAutomationControl/{controlId} {
+      allow read: if manager();
+      allow write: if false;
+    }
+    // Existing calendar controls/state remain private. Public clients get no database access.
     match /{document=**} {
       allow read, write: if false;
     }

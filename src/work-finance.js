@@ -25,8 +25,9 @@ export function groupWork(jobs) {
     { key: 'pipeline', label: 'Visits & Quotes', jobs: jobs.filter(job => ['site_visit', 'quoted'].includes(job.status)) },
     { key: 'booked', label: 'Accepted / Booked', months: true, jobs: jobs.filter(job => job.status === 'booked') },
     { key: 'completed', label: 'Completed', completed: true, jobs: jobs.filter(job => job.status === 'completed') },
+    { key: 'lost', label: 'Closed — Lost', jobs: jobs.filter(job => job.status === 'lost') },
   ];
-  const known = new Set(['lead', 'in_progress', 'site_visit', 'quoted', 'booked', 'completed']);
+  const known = new Set(['lead', 'in_progress', 'site_visit', 'quoted', 'booked', 'completed', 'lost']);
   const others = jobs.filter(job => !known.has(job.status || 'lead'));
   if (others.length) groups.push({ key: 'other', label: 'Other Jobs', jobs: others });
   return groups.filter(group => group.jobs.length);

@@ -4,6 +4,8 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { accessErrorMessage, googleIdentity } from './crm-access';
 import './CrmAccess.css';
+import { CrmAccessContext } from './crm-access-context';
+import { membershipRole } from '../crm-automation/domain';
 
 export default function CrmAccess({ children }) {
   const [access, setAccess] = useState({ phase: 'loading' });
@@ -48,10 +50,12 @@ export default function CrmAccess({ children }) {
               setAccess({ phase: 'checking', user });
               return;
             }
+            const role = snapshot.exists() ? membershipRole(email, snapshot.data()) : null;
             setAccess({
-              phase: snapshot.exists() && snapshot.data().enabled === true ? 'allowed' : 'denied',
+              phase: role ? 'allowed' : 'denied',
               user,
-              email
+              email,
+              role
             });
           },
           error => {
@@ -117,7 +121,9 @@ export default function CrmAccess({ children }) {
           <span><strong>Secure workspace</strong><span className="crm-session-email">{access.email}</span></span>
           <button type="button" className="crm-access-secondary" onClick={logout}>Sign out</button>
         </header>
-        {children}
+        <CrmAccessContext.Provider value={{ email: access.email, role: access.role }}>
+          {children}
+        </CrmAccessContext.Provider>
       </Fragment>
     );
   }
