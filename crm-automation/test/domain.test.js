@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { addMonths, analytics, canEmail, formatAddress, membershipRole, nzDay, profilePatch, ruleOccurrence, stagePatch, validateRule, validEmail } from '../domain.js';
-import { buildEmail, deliveryEligible, deliveryId, hash, sendGmail, suppressionId, unsubscribeToken, verifyUnsubscribe } from '../mail.js';
+import { buildEmail, deliveryEligible, deliveryId, hash, sendEmail, sendGmail, suppressionId, unsubscribeToken, verifyUnsubscribe } from '../mail.js';
 
 const actor = 'rep@example.test';
 const consent = { optIn: true, source: 'Fictional explicit permission', recordedAt: '2026-10-01', recordedBy: actor };
@@ -122,4 +122,48 @@ test('dispatch rechecks the sending gate, current rule, consent, recipient, due 
   assert.equal(deliveryEligible({ ...input, job: { ...job, lastPurchaseDate: '2025-12-11' } }), false);
   assert.equal(deliveryEligible({ ...input, delivery: { ...delivery, createdAt: '2026-11-01' } }), false);
   assert.equal(deliveryEligible({ ...input, now: Date.parse('2026-11-12') }), false);
+});
+
+test('business SMTP uses verified TLS, a single envelope recipient and no credential logging', async () => {
+  const auth = { transport: 'smtp', sender: 'sender@example.test', user: 'sender@example.test',
+    host: 'smtp.gmail.com', port: 465, password: 'fictional-app-password' };
+  const message = buildEmail({ rule, job, jobId: job.id, from: auth.sender,
+    unsubscribeUrl: 'https://example.test/unsubscribe', secret, id: 'fictional-smtp-id' });
+  let options, sent, closed = false;
+  const smtpFactory = config => {
+    options = config;
+    return { sendMail: async mail => {
+      sent = mail;
+      return { accepted: [job.email], messageId: '<fictional-smtp-id@example.test>' };
+    }, close: () => { closed = true; } };
+  };
+  assert.equal(await sendEmail(auth, message, { smtpFactory }), '<fictional-smtp-id@example.test>');
+  assert.equal(options.secure, true);
+  assert.equal(options.tls.rejectUnauthorized, true);
+  assert.equal(options.tls.minVersion, 'TLSv1.2');
+  assert.equal(options.logger, false);
+  assert.equal(options.debug, false);
+  assert.deepEqual(sent.envelope, { from: auth.sender, to: [job.email] });
+  assert.equal(closed, true);
+  for (const patch of [{ port: 25 }, { host: 'localhost' }, { user: 'other@example.test' }, { password: '' }]) {
+    await assert.rejects(sendEmail({ ...auth, ...patch }, message, { smtpFactory }), /configuration/);
+  }
+  const injected = { raw: Buffer.from(Buffer.from(message.raw, 'base64url').toString().replace(
+    `To: ${job.email}`, `To: ${job.email}\r\nBcc: other@example.test`)).toString('base64url') };
+  await assert.rejects(sendEmail(auth, injected, { smtpFactory }), /one explicit recipient/);
+});
+
+test('SMTP provider errors are sanitized and ambiguous acceptance is not retried', async () => {
+  const auth = { transport: 'smtp', sender: 'sender@example.test', user: 'sender@example.test',
+    host: 'smtp.gmail.com', port: 465, password: 'fictional-app-password' };
+  const message = buildEmail({ rule, job, jobId: job.id, from: auth.sender,
+    unsubscribeUrl: 'https://example.test/unsubscribe', secret, id: 'fictional-smtp-id' });
+  let calls = 0;
+  await assert.rejects(sendEmail(auth, message, { smtpFactory: () => ({ sendMail: async () => {
+    calls++; throw new Error('Provider error with fictional private authentication detail');
+  } }) }), error => error.message === 'SMTP dispatch failed or acceptance uncertain; review before retrying.');
+  assert.equal(calls, 1);
+  await assert.rejects(sendEmail(auth, message, { smtpFactory: () => ({
+    sendMail: async () => ({ accepted: [], messageId: 'not-accepted' })
+  }) }), /acceptance uncertain/);
 });

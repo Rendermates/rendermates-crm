@@ -78,3 +78,47 @@ export async function sendGmail(auth, message, fetcher = fetch) {
   if (!sent.id) throw new Error('Provider acceptance is uncertain; do not retry automatically.');
   return sent.id;
 }
+
+export async function sendEmail(auth, message, { fetcher = fetch, smtpFactory } = {}) {
+  if (!auth.transport || auth.transport === 'gmail_oauth') return sendGmail(auth, message, fetcher);
+  if (auth.transport !== 'smtp') throw new Error('Unsupported email transport.');
+  const allowedHosts = ['smtp.gmail.com', 'smtp.hostinger.com', 'smtp.titan.email'];
+  if (!validEmail(auth.sender) || !validEmail(auth.user) ||
+      auth.sender.toLowerCase() !== auth.user.toLowerCase() ||
+      !allowedHosts.includes(auth.host) || auth.port !== 465 ||
+      typeof auth.password !== 'string' || !auth.password.trim()) {
+    throw new Error('Secure SMTP sender configuration is incomplete.');
+  }
+  if (typeof message?.raw !== 'string') throw new Error('Invalid email message.');
+  const raw = Buffer.from(message.raw, 'base64url').toString('utf8');
+  const headers = raw.split('\r\n\r\n', 1)[0];
+  const recipients = [...headers.matchAll(/^To: ([^\r\n]+)$/gm)].map(match => match[1]);
+  const from = [...headers.matchAll(/^From: Rendermates <([^>\r\n]+)>$/gm)].map(match => match[1]);
+  if (recipients.length !== 1 || !validEmail(recipients[0]) ||
+      from.length !== 1 || from[0].toLowerCase() !== auth.sender.toLowerCase() ||
+      /^(Cc|Bcc|Resent-To|Resent-Cc|Resent-Bcc):/im.test(headers)) {
+    throw new Error('SMTP message must have one explicit recipient and the authorized sender.');
+  }
+  const createTransport = smtpFactory || (await import('nodemailer')).default.createTransport;
+  const transport = createTransport({
+    host: auth.host, port: 465, secure: true,
+    auth: { user: auth.user, pass: auth.password },
+    tls: { minVersion: 'TLSv1.2', rejectUnauthorized: true, servername: auth.host },
+    connectionTimeout: 15000, greetingTimeout: 15000, socketTimeout: 30000,
+    disableFileAccess: true, disableUrlAccess: true, logger: false, debug: false
+  });
+  try {
+    const result = await transport.sendMail({
+      envelope: { from: auth.sender, to: [recipients[0]] }, raw
+    });
+    if (result.accepted?.length !== 1 ||
+        String(result.accepted[0]).toLowerCase() !== recipients[0].toLowerCase() ||
+        !result.messageId) throw new Error('Uncertain SMTP acceptance.');
+    return result.messageId;
+  } catch {
+    // Provider errors can include authentication details. Never propagate them.
+    throw new Error('SMTP dispatch failed or acceptance uncertain; review before retrying.');
+  } finally {
+    try { transport.close?.(); } catch { /* No blind retry after acceptance. */ }
+  }
+}

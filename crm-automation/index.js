@@ -6,12 +6,12 @@ import { onRequest } from 'firebase-functions/v2/https';
 import { defineSecret } from 'firebase-functions/params';
 import { setGlobalOptions } from 'firebase-functions/v2';
 import { canEmail, nzDay, ruleOccurrence, validateRule, WON_STATUSES } from './domain.js';
-import { buildEmail, deliveryEligible, deliveryId, hash, recipient, sendGmail, suppressionId, verifyUnsubscribe } from './mail.js';
+import { buildEmail, deliveryEligible, deliveryId, hash, recipient, sendEmail, suppressionId, verifyUnsubscribe } from './mail.js';
 
 const app = getApps().find(app => app.name === '[DEFAULT]') || initializeApp();
 setGlobalOptions({ serviceAccount: 'crm-automation-runtime@rendermates-crm.iam.gserviceaccount.com' });
 const db = getFirestore(app);
-const senderAuth = defineSecret('CRM_GMAIL_SENDER_AUTH');
+const senderAuth = defineSecret('CRM_EMAIL_SENDER_AUTH');
 const unsubscribeSecret = defineSecret('CRM_UNSUBSCRIBE_SECRET');
 const region = 'australia-southeast1';
 const controlRef = () => db.doc('_crmAutomationControl/email');
@@ -137,10 +137,10 @@ export const crmSendEmails = onSchedule({
         rule: freshRule, job: fresh, jobId: claimed.data.jobId, id: item.id,
         from: auth.sender, unsubscribeUrl, secret: unsubscribeSecret.value()
       });
-      const providerId = await sendGmail(auth, message);
+      const providerId = await sendEmail(auth, message);
       await item.ref.update({ status: 'sent', sentAt: nowISO(), providerId });
       await db.doc(`jobs/${claimed.data.jobId}`).collection('activity').add({
-        type: 'email', text: `Automated email accepted by Gmail: ${freshRule.name}.`,
+        type: 'email', text: `Automated email accepted by the email provider: ${freshRule.name}.`,
         actor: 'CRM backend', createdAt: nowISO()
       }).catch(() => {}); // An activity-log failure must never turn accepted mail into a retry.
     } catch {
