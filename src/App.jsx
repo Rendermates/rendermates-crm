@@ -5,6 +5,8 @@ import ReceiptsForecast from './ReceiptsForecast';
 import ClaimDates from './ClaimDates';
 import CalendarSyncNotice from './CalendarSyncNotice';
 import CRMWorkspace, { LostDealDialog, TaskReminderStrip } from './CRMWorkspace';
+import WebsiteEnquiry from './WebsiteEnquiry';
+import { enquiryAddress } from './enquiry-details';
 import { useCrmAccess } from './crm-access-context';
 import { changeStage } from './crm-data';
 import { manages, millis } from '../crm-automation/domain';
@@ -1384,7 +1386,7 @@ export default function App() {
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '14px', color: '#475569' }}>
                   <span style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'pre-wrap' }}>
-                    <MapPin size={15} /> {selectedJob.address || 'Address not recorded'}
+                    <MapPin size={15} /> {enquiryAddress(selectedJob) || 'Address not recorded'}
                   </span>
                   {selectedJob.phone && (
                     <a href={`tel:${selectedJob.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0f172a', textDecoration: 'none' }}>
@@ -1395,12 +1397,6 @@ export default function App() {
                   <span>System: <strong>{selectedJob.system}</strong></span>
                   {selectedJob.sqm > 0 && <span><strong>{selectedJob.sqm} m²</strong></span>}
                 </div>
-                {(selectedJob.message || selectedJob.enquiryMessage || selectedJob.websiteMessage) && (
-                  <div style={{ background: '#fff1f2', border: '1px solid #fecdd3', borderRadius: '9px', padding: '12px 14px', marginTop: '14px', maxWidth: '760px' }}>
-                    <div style={{ fontSize: '10px', fontWeight: '800', textTransform: 'uppercase', letterSpacing: '0.05em', color: '#9f1239', marginBottom: '4px' }}>Website enquiry message</div>
-                    <div style={{ fontSize: '13px', lineHeight: 1.5, color: '#7f1d1d', whiteSpace: 'pre-wrap' }}>{selectedJob.message || selectedJob.enquiryMessage || selectedJob.websiteMessage}</div>
-                  </div>
-                )}
               </div>
 
               <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'right' }}>
@@ -1411,6 +1407,8 @@ export default function App() {
                 </div>
               </div>
             </div>
+
+            <WebsiteEnquiry key={selectedJob.id} job={selectedJob} />
 
             <div>
               <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', marginBottom: '8px', textTransform: 'uppercase' }}>
