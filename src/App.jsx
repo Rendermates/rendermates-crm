@@ -4,9 +4,13 @@ import WorkGroup from './WorkGroup';
 import ReceiptsForecast from './ReceiptsForecast';
 import ClaimDates from './ClaimDates';
 import CalendarSyncNotice from './CalendarSyncNotice';
+import CRMWorkspace, { LostDealDialog, TaskReminderStrip } from './CRMWorkspace';
+import { useCrmAccess } from './crm-access-context';
+import { changeStage } from './crm-data';
+import { manages, millis } from '../crm-automation/domain';
 import { groupWork, isDateKey } from './work-finance';
 import { db } from './firebase';
-import { collection, addDoc, onSnapshot, query, orderBy, updateDoc, doc, runTransaction } from 'firebase/firestore';
+import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, runTransaction } from 'firebase/firestore';
 import { 
   Plus, Phone, MapPin, DollarSign, PlusCircle, Trash2, X, FileText, 
   FileUp, Check, Zap, Eye, ExternalLink, Edit2, CheckCircle2, Clock, 
@@ -34,7 +38,8 @@ const STAGES = [
   { id: 'quoted', label: 'Quote Sent', color: '#8b5cf6', bg: '#ede9fe', cardBg: '#F5F3FF', cardAccent: '#7C3AED' },
   { id: 'booked', label: 'Booked / Future Work', color: '#0f766e', bg: '#ccfbf1', cardBg: '#FFFBEB', cardAccent: '#D97706' },
   { id: 'in_progress', label: 'In Progress', color: '#0ea5e9', bg: '#e0f2fe', cardBg: '#ECFDF5', cardAccent: '#059669' },
-  { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5', cardBg: '#F1F5F9', cardAccent: '#64748B' }
+  { id: 'completed', label: 'Completed', color: '#10b981', bg: '#d1fae5', cardBg: '#F1F5F9', cardAccent: '#64748B' },
+  { id: 'lost', label: 'Closed — Lost', color: '#475569', bg: '#e2e8f0', cardBg: '#F1F5F9', cardAccent: '#64748B' }
 ];
 
 const isJobArchived = job => Boolean(job?.archived || job?.archivedAt);
@@ -100,7 +105,13 @@ const formatExtraDate = (date = '') => {
 };
 
 export default function App() {
-  const [jobs, setJobs] = useState([]);
+  const access = useCrmAccess();
+  const [crmOpen, setCrmOpen] = useState(false);
+  const [crmTab, setCrmTab] = useState('customers');
+  const [crmInitialJob, setCrmInitialJob] = useState('');
+  const [lossJob, setLossJob] = useState(null);
+  const [loadedJobs, setJobs] = useState([]);
+  const jobs = manages(access.role) ? loadedJobs : loadedJobs.filter(job => job.assignedTo === access.email);
   const [selectedJobId, setSelectedJobId] = useState(null);
   const [activeTab, setActiveTab] = useState('claims');
   const [filterSource, setFilterSource] = useState('all');
@@ -181,13 +192,15 @@ export default function App() {
       document.head.appendChild(script);
     }
 
-    const q = query(collection(db, 'jobs'), orderBy('createdAt', 'desc'));
+    const q = manages(access.role) ? collection(db, 'jobs')
+      : query(collection(db, 'jobs'), where('assignedTo', '==', access.email));
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const loaded = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      loaded.sort((a, b) => (millis(b.createdAt) || 0) - (millis(a.createdAt) || 0));
       setJobs(loaded);
-    });
+    }, () => { setJobs([]); });
     return () => unsubscribe();
-  }, []);
+  }, [access.email, access.role]);
 
   const selectedJob = jobs.find(j => j.id === selectedJobId) || null;
   const activeJobs = jobs.filter(job => !isJobArchived(job));
@@ -251,14 +264,11 @@ export default function App() {
 
   const handleStageSelect = async (newStatus) => {
     if (!selectedJob) return;
+    if (newStatus === 'lost') { setLossJob(selectedJob); return; }
     try {
-      const updates = { status: newStatus };
-      if (newStatus === 'in_progress' && !selectedJob.startDate) {
-        updates.startDate = new Date().toISOString().split('T')[0];
-      }
-      await updateDoc(doc(db, 'jobs', selectedJob.id), updates);
-    } catch (err) {
-      console.error(err);
+      await changeStage(db, selectedJob, newStatus, {}, access.email);
+    } catch {
+      alert('Could not change this sales stage. Check your access and try again.');
     }
   };
 
@@ -313,6 +323,7 @@ export default function App() {
     try {
       const docRef = await addDoc(collection(db, 'jobs'), {
         ...newJob,
+        assignedTo: access.email,
         sqm: Number(newJob.sqm) || 0,
         contractAmount: Number(newJob.contractAmount) || 0,
         extras: [],
@@ -635,8 +646,16 @@ export default function App() {
   const newLeadJobs = showNewLeadsSection ? filteredJobs.filter(j => !j.status || j.status === 'lead') : [];
   const otherFilteredJobs = showNewLeadsSection ? filteredJobs.filter(j => j.status && j.status !== 'lead') : filteredJobs;
 
+  const reminders = <TaskReminderStrip onOpen={() => { setCrmTab('tasks'); setCrmOpen(true); }} />;
+  if (crmOpen) return <>{reminders}<CRMWorkspace jobs={jobs} initialJobId={crmInitialJob} tab={crmTab} onTabChange={setCrmTab}
+    onBack={() => setCrmOpen(false)}
+    onOpenWork={id => { setSelectedJobId(id); setCrmOpen(false); }} /></>;
+
   return (
+    <>{reminders}
     <div style={{ minHeight: '100vh', background: '#f8fafc', color: '#0f172a', fontFamily: 'system-ui, -apple-system, sans-serif' }}>
+      {lossJob && <LostDealDialog job={lossJob} onClose={() => setLossJob(null)}
+        onSave={loss => changeStage(db, lossJob, 'lost', loss, access.email)} />}
       
       {!selectedJob ? (
         <div style={{ padding: '24px', maxWidth: '1280px', margin: '0 auto' }}>
@@ -653,6 +672,8 @@ export default function App() {
             </div>
 
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+              <button type="button" onClick={() => { setCrmInitialJob(''); setCrmTab('customers'); setCrmOpen(true); }}
+                style={{ background: '#176a7d', color: '#fff', padding: '11px 16px', borderRadius: '8px', border: 0, fontWeight: 800, cursor: 'pointer' }}>Sales & Customers</button>
                 <a
                   href="https://tasks.google.com/"
                   target="_blank"
@@ -1330,6 +1351,8 @@ export default function App() {
               <ArrowLeft size={16} /> All Jobs
             </button>
             <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => { setCrmInitialJob(selectedJob.id); setCrmTab('customers'); setCrmOpen(true); }}
+                style={{ background: '#176a7d', color: '#fff', padding: '10px 14px', borderRadius: '8px', border: 0, fontWeight: 800, cursor: 'pointer' }}>Customer profile & messages</button>
               <button type="button" onClick={() => handleToggleArchiveJob(selectedJob)} style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', background: '#ffffff', border: '1px solid #cbd5e1', color: isJobArchived(selectedJob) ? '#047857' : '#475569', padding: '8px 11px', borderRadius: '8px', cursor: 'pointer', fontWeight: '800', fontSize: '12px' }}>
                 {isJobArchived(selectedJob) ? <ArchiveRestore size={14} /> : <Archive size={14} />} {isJobArchived(selectedJob) ? 'Restore Job' : 'Archive Job'}
               </button>
@@ -1360,22 +1383,9 @@ export default function App() {
                 </h1>
 
                 <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap', fontSize: '14px', color: '#475569' }}>
-                  <a
-                    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(selectedJob.address)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0284c7', textDecoration: 'none', fontWeight: '600' }}
-                  >
-                    <Compass size={15} /> Google Maps
-                  </a>
-                  <a
-                    href={`https://maps.apple.com/?q=${encodeURIComponent(selectedJob.address)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#64748b', textDecoration: 'none' }}
-                  >
-                    <MapPin size={15} /> Apple Maps
-                  </a>
+                  <span style={{ display: 'flex', alignItems: 'center', gap: '4px', whiteSpace: 'pre-wrap' }}>
+                    <MapPin size={15} /> {selectedJob.address || 'Address not recorded'}
+                  </span>
                   {selectedJob.phone && (
                     <a href={`tel:${selectedJob.phone}`} style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#0f172a', textDecoration: 'none' }}>
                       <Phone size={15} color="#64748b" /> {selectedJob.phone}
@@ -2155,6 +2165,6 @@ export default function App() {
         </div>
       )}
 
-    </div>
+    </div></>
   );
 }
