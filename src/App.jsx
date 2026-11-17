@@ -7,7 +7,7 @@ import CalendarSyncNotice from './CalendarSyncNotice';
 import CRMWorkspace, { LostDealDialog, TaskReminderStrip } from './CRMWorkspace';
 import WebsiteEnquiry from './WebsiteEnquiry';
 import { enquiryAddress } from './enquiry-details';
-import { parseXeroQuoteTotals } from './xero-quote';
+import { isQuotePdf, parseXeroQuoteTotals } from './xero-quote';
 import { useCrmAccess } from './crm-access-context';
 import { changeStage } from './crm-data';
 import { manages, millis } from '../crm-automation/domain';
@@ -403,7 +403,7 @@ export default function App() {
     reader.onload = async () => {
       const originalPdfDataUrl = reader.result;
 
-      if (file.type === 'application/pdf' && window.pdfjsLib) {
+      if (isQuotePdf(file) && window.pdfjsLib) {
         try {
           const arrayBuffer = await file.arrayBuffer();
           const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -487,7 +487,7 @@ export default function App() {
       date: newExtra.date,
       hours,
       rate,
-      amount,
+      amount: moneyCents(amount) / 100,
       invoiced: false,
     };
     try {
@@ -1322,7 +1322,7 @@ export default function App() {
                       <div style={{ color: '#92400e', fontSize: '12px', marginTop: '6px' }}>Extras & variations (separate): <strong>{formatMoney(jobFinance.extras)}</strong> excl. GST</div>
                       {jPendingExtras.length > 0 && (
                         <div style={{ marginTop: '6px', fontSize: '11px', color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: '6px', fontWeight: '700' }}>
-                          ⚡ {jPendingExtras.length} variation(s) pending invoice (+${jPendingExtras.reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString('en-NZ')})
+                          ⚡ {jPendingExtras.length} variation(s) pending invoice (+{formatMoney(jobFinance.extrasPending)})
                         </div>
                       )}
                     </div>
@@ -1899,7 +1899,7 @@ export default function App() {
                       <span><strong>Pending to Invoice:</strong> {pendingExtras.length} variation(s)</span>
                     </div>
                     <strong style={{ fontSize: '15px' }}>
-                      +${pendingExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                      +{formatMoney(finance.extrasPending)}
                     </strong>
                   </div>
 
@@ -1909,7 +1909,7 @@ export default function App() {
                       <span><strong>Already Invoiced:</strong> {invoicedExtras.length} variation(s)</span>
                     </div>
                     <strong style={{ fontSize: '15px' }}>
-                      +${invoicedExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                      +{formatMoney(finance.extrasInvoiced)}
                     </strong>
                   </div>
                 </div>
@@ -1976,7 +1976,7 @@ export default function App() {
                               )}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: extra.invoiced ? '#64748b' : '#0284c7' }}>
-                              +${Number(extra.amount).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                              +{formatMoney(moneyCents(extra.amount))}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                               <button

@@ -1,5 +1,7 @@
 import { moneyCents, withGstCents } from './work-finance.js';
 
+export const isQuotePdf = file => file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
+
 export function parseXeroQuoteTotals(text) {
   const amount = String.raw`(?:NZD\s*)?\$?\s*([0-9][0-9,]*\.[0-9]{2})(?![0-9%])`;
   const subtotal = text.match(new RegExp(String.raw`(?:Subtotal|Total\s*(?:excl\.?|excluding)\s*GST)\s*:?\s*${amount}`, 'i'));

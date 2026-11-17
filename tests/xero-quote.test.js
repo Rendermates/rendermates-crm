@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { parseXeroQuoteTotals } from '../src/xero-quote.js';
+import { isQuotePdf, parseXeroQuoteTotals } from '../src/xero-quote.js';
+
+test('PDF selection accepts missing or generic browser MIME types by extension', () => {
+  assert.equal(isQuotePdf({ name: 'quote.pdf', type: 'application/octet-stream' }), true);
+  assert.equal(isQuotePdf({ name: 'QUOTE.PDF', type: '' }), true);
+  assert.equal(isQuotePdf({ name: 'quote', type: 'application/pdf' }), true);
+  assert.equal(isQuotePdf({ name: 'photo.png', type: 'image/png' }), false);
+});
 
 test('Xero subtotal and gross are read independently of the GST tax amount', () => {
   assert.deepEqual(parseXeroQuoteTotals('Subtotal 24,490.00 Total GST 15.00% 3,673.50 Total NZD 28,163.50'), {
