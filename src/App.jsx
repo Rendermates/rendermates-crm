@@ -7,10 +7,11 @@ import CalendarSyncNotice from './CalendarSyncNotice';
 import CRMWorkspace, { LostDealDialog, TaskReminderStrip } from './CRMWorkspace';
 import WebsiteEnquiry from './WebsiteEnquiry';
 import { enquiryAddress } from './enquiry-details';
+import { isQuotePdf, parseXeroQuoteTotals } from './xero-quote';
 import { useCrmAccess } from './crm-access-context';
 import { changeStage } from './crm-data';
 import { manages, millis } from '../crm-automation/domain';
-import { groupWork, isDateKey } from './work-finance';
+import { groupWork, isDateKey, quoteFinancials, quoteClaimCents, moneyCents, formatMoney, withGstCents, claimQuoteDifferenceCents } from './work-finance';
 import { db } from './firebase';
 import { collection, addDoc, onSnapshot, query, where, updateDoc, doc, runTransaction } from 'firebase/firestore';
 import { 
@@ -214,6 +215,11 @@ export default function App() {
       setVisitDate(selectedJob.siteVisitDate || '');
       setVisitTime(selectedJob.siteVisitTime || '09:00');
       setVisitNotes(selectedJob.siteVisitNotes || '');
+      setQuoteData({
+        quoteNumber: selectedJob.quoteNumber || '', fileName: selectedJob.quoteFileName || '', pdfDataUrl: '',
+        amountExclGst: selectedJob.contractAmount ? (moneyCents(selectedJob.contractAmount) / 100).toFixed(2) : '',
+        amountIncGst: selectedJob.contractAmount ? (withGstCents(moneyCents(selectedJob.contractAmount)) / 100).toFixed(2) : '',
+      });
     }
   }, [selectedJobId]);
 
@@ -251,14 +257,8 @@ export default function App() {
     return diffDays >= 0 && diffDays <= 7;
   });
 
-  const baseContract = Number(selectedJob?.contractAmount) || 0;
-  const totalExtras = (selectedJob?.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
-  const totalContractExclGst = baseContract + totalExtras;
-  const gstAmount = totalContractExclGst * 0.15;
-  const totalContractIncGst = totalContractExclGst * 1.15;
-  const totalPaid = (selectedJob?.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
-  const remainingUnpaid = totalContractExclGst - totalPaid;
-  const percentPaid = totalContractExclGst > 0 ? ((totalPaid / totalContractExclGst) * 100).toFixed(1) : 0;
+  const finance = quoteFinancials(selectedJob || {});
+  const totalContractExclGst = finance.contract / 100;
 
   const extrasList = selectedJob?.extras || [];
   const pendingExtras = extrasList.filter(x => !x.invoiced);
@@ -403,7 +403,7 @@ export default function App() {
     reader.onload = async () => {
       const originalPdfDataUrl = reader.result;
 
-      if (file.type === 'application/pdf' && window.pdfjsLib) {
+      if (isQuotePdf(file) && window.pdfjsLib) {
         try {
           const arrayBuffer = await file.arrayBuffer();
           const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -419,14 +419,7 @@ export default function App() {
             if (qMatch) extractedQuoteNum = qMatch[1];
           }
 
-          const subtotalMatch = fullText.match(/(?:Total\s*(?:excl|excluding)?\s*GST|Subtotal)\s*[:\$]?\s*([0-9,]+\.[0-9]{2})/i);
-          const totalIncMatch = fullText.match(/(?:Total\s*(?:inc|including)?\s*GST|Amount\s*Due|Total\s*NZD)\s*[:\$]?\s*([0-9,]+\.[0-9]{2})/i);
-
-          parsedExcl = subtotalMatch ? parseFloat(subtotalMatch[1].replace(/,/g, '')) : '';
-          parsedInc = totalIncMatch ? parseFloat(totalIncMatch[1].replace(/,/g, '')) : '';
-
-          if (parsedExcl && !parsedInc) parsedInc = (parsedExcl * 1.15).toFixed(2);
-          else if (!parsedExcl && parsedInc) parsedExcl = (parsedInc / 1.15).toFixed(2);
+          ({ amountExclGst: parsedExcl, amountIncGst: parsedInc } = parseXeroQuoteTotals(fullText));
         } catch (err) {
           console.warn('PDF parser error:', err);
         }
@@ -445,11 +438,20 @@ export default function App() {
 
   const handleSaveQuoteToJob = async (e) => {
     e.preventDefault();
-    if (!selectedJob || !quoteData.amountExclGst) return;
+    if (!selectedJob) return;
+    const quoteCents = moneyCents(quoteData.amountExclGst);
+    if (quoteCents <= 0) {
+      alert('Enter the positive subtotal excluding GST shown on the Xero quote.');
+      return;
+    }
+    if (quoteData.amountIncGst && Math.abs(moneyCents(quoteData.amountIncGst) - withGstCents(quoteCents)) > 1) {
+      alert('The subtotal and GST-inclusive total do not agree at 15% GST. Check the values against the Xero PDF before saving.');
+      return;
+    }
 
     try {
       const updatePayload = {
-        contractAmount: Number(quoteData.amountExclGst) || 0,
+        contractAmount: quoteCents / 100,
         quoteNumber: quoteData.quoteNumber || '',
         quoteFileName: quoteData.fileName || '',
         status: 'quoted'
@@ -459,7 +461,7 @@ export default function App() {
       }
 
       await updateDoc(doc(db, 'jobs', selectedJob.id), updatePayload);
-      setQuoteData({ quoteNumber: '', amountExclGst: '', amountIncGst: '', fileName: '', pdfDataUrl: '' });
+      setQuoteData(current => ({ ...current, pdfDataUrl: '' }));
       alert('Quote attached & Contract Total updated successfully!');
     } catch (err) {
       alert('Error updating quote: ' + err.message);
@@ -485,7 +487,7 @@ export default function App() {
       date: newExtra.date,
       hours,
       rate,
-      amount,
+      amount: moneyCents(amount) / 100,
       invoiced: false,
     };
     try {
@@ -522,9 +524,9 @@ export default function App() {
     const inputNum = parseFloat(claimInputValue) || 0;
     if (claimMode === 'percent') {
       percentage = inputNum;
-      finalAmount = totalContractExclGst > 0 ? (totalContractExclGst * (percentage / 100)) : 0;
+      finalAmount = totalContractExclGst > 0 ? quoteClaimCents(selectedJob, percentage) / 100 : 0;
     } else {
-      finalAmount = inputNum;
+      finalAmount = moneyCents(inputNum) / 100;
       percentage = totalContractExclGst > 0 ? ((finalAmount / totalContractExclGst) * 100) : 0;
     }
 
@@ -546,6 +548,7 @@ export default function App() {
       stageType: claimStageType,
       description: description,
       percentage: Number(percentage.toFixed(1)),
+      calculationMode: claimMode,
       amount: Number(finalAmount.toFixed(2)),
       expectedDate: claimExpectedDate,
       invoiceNo: claimInvoiceNo.trim() || 'Pending',
@@ -1241,10 +1244,7 @@ export default function App() {
             ) : (
               (showArchivedJobs ? [{ key: 'archived', label: 'Archived Jobs', open: true, jobs: otherFilteredJobs }] : groupWork(otherFilteredJobs)).map(group => (
                 <WorkGroup key={group.key} group={group} renderJob={job => {
-                const jExtras = (job.extras || []).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
-                const jContract = (Number(job.contractAmount) || 0) + jExtras;
-                const jPaid = (job.claims || []).filter(c => c.status === 'Paid').reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
-                const jRemaining = jContract - jPaid;
+                const jobFinance = quoteFinancials(job);
                 const jStage = STAGES.find(s => s.id === job.status) || STAGES[0];
                 const jSource = LEAD_SOURCES.find(src => src.id === (job.source || 'website')) || LEAD_SOURCES[0];
                 const SourceIcon = jSource.icon;
@@ -1311,16 +1311,18 @@ export default function App() {
 
                     <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '10px 12px', border: '1px solid #f1f5f9', margin: '10px 0' }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', marginBottom: '4px' }}>
-                        <span style={{ color: '#64748b' }}>Contract: <strong style={{ color: '#0f172a' }}>${jContract.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</strong></span>
-                        <span style={{ color: '#64748b' }}>Paid: <strong style={{ color: '#16a34a' }}>${jPaid.toLocaleString('en-NZ')}</strong></span>
+                        <span style={{ color: '#64748b' }}>Quote contract: <strong style={{ color: '#0f172a' }}>{formatMoney(jobFinance.contract)}</strong></span>
+                        <span style={{ color: '#64748b' }}>Paid: <strong style={{ color: '#16a34a' }}>{formatMoney(jobFinance.paid)}</strong></span>
                       </div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', fontWeight: '700' }}>
                         <span style={{ color: '#dc2626' }}>Remaining:</span>
-                        <span style={{ color: '#dc2626' }}>${jRemaining.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</span>
+                        <span style={{ color: '#dc2626' }}>{formatMoney(jobFinance.unpaid)}</span>
                       </div>
+                      {jobFinance.overpaid > 0 && <div style={{ color: '#92400e', fontSize: '12px', marginTop: '5px' }}>Payments above quote: {formatMoney(jobFinance.overpaid)} — review claims</div>}
+                      <div style={{ color: '#92400e', fontSize: '12px', marginTop: '6px' }}>Extras & variations (separate): <strong>{formatMoney(jobFinance.extras)}</strong> excl. GST</div>
                       {jPendingExtras.length > 0 && (
                         <div style={{ marginTop: '6px', fontSize: '11px', color: '#b45309', background: '#fef3c7', padding: '3px 8px', borderRadius: '6px', fontWeight: '700' }}>
-                          ⚡ {jPendingExtras.length} variation(s) pending invoice (+${jPendingExtras.reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString('en-NZ')})
+                          ⚡ {jPendingExtras.length} variation(s) pending invoice (+{formatMoney(jobFinance.extrasPending)})
                         </div>
                       )}
                     </div>
@@ -1400,10 +1402,20 @@ export default function App() {
               </div>
 
               <div style={{ background: '#f8fafc', padding: '12px 18px', borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'right' }}>
-                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700' }}>TOTAL CONTRACT (EXCL. GST)</div>
-                <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a' }}>${totalContractExclGst.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</div>
+                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '700' }}>TOTAL CONTRACT — XERO QUOTE (EXCL. GST)</div>
+                <div style={{ fontSize: '22px', fontWeight: '800', color: '#0f172a' }}>{formatMoney(finance.contract)}</div>
                 <div style={{ fontSize: '12px', color: '#16a34a', fontWeight: '600' }}>
-                  Paid: ${totalPaid.toLocaleString('en-NZ')} ({percentPaid}%) • Unpaid: <span style={{ color: '#dc2626' }}>${remainingUnpaid.toLocaleString('en-NZ', { minimumFractionDigits: 2 })}</span>
+                  Paid: {formatMoney(finance.paid)} ({finance.percentPaid.toFixed(1)}%) • Unpaid: <span style={{ color: '#dc2626' }}>{formatMoney(finance.unpaid)}</span>
+                </div>
+                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '5px' }}>Quote claims only · extras excluded · all amounts excl. GST</div>
+                {finance.overpaid > 0 && <div role="alert" style={{ color: '#92400e', fontSize: '12px', marginTop: '8px', maxWidth: '340px' }}>
+                  Recorded payments exceed the quote by {formatMoney(finance.overpaid)}. Review the saved claims; no payment amounts have been changed.
+                </div>}
+                <div style={{ borderTop: '1px solid #e2e8f0', paddingTop: '10px', marginTop: '10px', color: '#92400e' }}>
+                  <strong style={{ fontSize: '12px' }}>EXTRAS & VARIATIONS (EXCL. GST)</strong>
+                  <div style={{ fontSize: '20px', fontWeight: '800' }}>{formatMoney(finance.extras)}</div>
+                  <div style={{ fontSize: '11px', marginTop: '4px' }}>Pending invoice: {formatMoney(finance.extrasPending)} · Invoiced: {formatMoney(finance.extrasInvoiced)}</div>
+                  <div style={{ fontSize: '11px', marginTop: '4px', color: '#64748b' }}>Invoiced does not mean paid. Managed in Extras & Variations.</div>
                 </div>
               </div>
             </div>
@@ -1707,6 +1719,7 @@ export default function App() {
                       </button>
                     </div>
                   </div>
+                  <p style={{ fontSize: '12px', color: '#475569' }}>All stages and percentages apply only to the Xero quote ({formatMoney(finance.contract)} excl. GST). Record extra work separately in Extras & Variations.</p>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: '12px', alignItems: 'center' }}>
                     <div>
@@ -1752,7 +1765,7 @@ export default function App() {
                       )}
                       <div style={{ fontSize: '11px', color: '#0284c7', marginTop: '3px', fontWeight: '700' }}>
                         {claimMode === 'percent'
-                          ? `= $${(totalContractExclGst * ((parseFloat(claimInputValue) || 0) / 100)).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Excl. GST`
+                          ? `= ${formatMoney(quoteClaimCents(selectedJob, parseFloat(claimInputValue) || 0))} Excl. GST`
                           : `= ${totalContractExclGst > 0 ? (((parseFloat(claimInputValue) || 0) / totalContractExclGst) * 100).toFixed(1) : 0}% of Contract`}
                       </div>
                     </div>
@@ -1805,6 +1818,9 @@ export default function App() {
                             <td style={{ padding: '14px 16px', fontWeight: '700', color: '#0f172a' }}>
                               {claim.description}
                               <div style={{ fontSize: '11px', color: '#64748b', fontWeight: '400' }}>{claim.date}</div>
+                              {claimQuoteDifferenceCents(selectedJob, claim) !== 0 && <div style={{ marginTop: '6px', fontSize: '11px', lineHeight: 1.5, color: '#92400e', fontWeight: '400' }}>
+                                Review: {claim.percentage}% of the current quote is {formatMoney(quoteClaimCents(selectedJob, claim.percentage))}, not {formatMoney(moneyCents(claim.amount))}. Recorded amount preserved.
+                              </div>}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'center', color: '#0284c7', fontWeight: '800' }}>
                               {claim.percentage ? `${claim.percentage}%` : '-'}
@@ -1813,7 +1829,7 @@ export default function App() {
                               ${Number(claim.amount).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'right', color: '#475569' }}>
-                              ${(Number(claim.amount) * 1.15).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                              {formatMoney(withGstCents(moneyCents(claim.amount)))}
                             </td>
                             <td style={{ padding: '14px 16px' }}>
                               {editingInvoiceId === claim.id ? (
@@ -1883,7 +1899,7 @@ export default function App() {
                       <span><strong>Pending to Invoice:</strong> {pendingExtras.length} variation(s)</span>
                     </div>
                     <strong style={{ fontSize: '15px' }}>
-                      +${pendingExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                      +{formatMoney(finance.extrasPending)}
                     </strong>
                   </div>
 
@@ -1893,7 +1909,7 @@ export default function App() {
                       <span><strong>Already Invoiced:</strong> {invoicedExtras.length} variation(s)</span>
                     </div>
                     <strong style={{ fontSize: '15px' }}>
-                      +${invoicedExtras.reduce((acc, x) => acc + (Number(x.amount) || 0), 0).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                      +{formatMoney(finance.extrasInvoiced)}
                     </strong>
                   </div>
                 </div>
@@ -1960,7 +1976,7 @@ export default function App() {
                               )}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'right', fontWeight: '800', color: extra.invoiced ? '#64748b' : '#0284c7' }}>
-                              +${Number(extra.amount).toLocaleString('en-NZ', { minimumFractionDigits: 2 })}
+                              +{formatMoney(moneyCents(extra.amount))}
                             </td>
                             <td style={{ padding: '14px 16px', textAlign: 'center' }}>
                               <button
@@ -2004,7 +2020,7 @@ export default function App() {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
                     <div>
                       <h3 style={{ margin: 0, fontSize: '16px', fontWeight: '800', color: '#4c1d95' }}>Attach or Update Xero Quote PDF</h3>
-                      <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6d28d9' }}>Drop your exported Xero PDF to auto-read Quote Number & Totals</p>
+                      <p style={{ margin: '2px 0 0 0', fontSize: '13px', color: '#6d28d9' }}>Import the Xero PDF, check the extracted subtotal against the document, then Update Contract. Extras stay separate; existing payments are not recalculated.</p>
                     </div>
                     {selectedJob.quoteNumber && (
                       <span style={{ background: '#ede9fe', color: '#6d28d9', padding: '4px 12px', borderRadius: '8px', fontWeight: '800', fontSize: '13px' }}>
@@ -2036,7 +2052,7 @@ export default function App() {
                         <input
                           type="text"
                           placeholder="e.g. QU000647"
-                          value={quoteData.quoteNumber || selectedJob.quoteNumber || ''}
+                          value={quoteData.quoteNumber}
                           onChange={(e) => setQuoteData({ ...quoteData, quoteNumber: e.target.value })}
                           style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '13px', boxSizing: 'border-box' }}
                         />
@@ -2046,13 +2062,14 @@ export default function App() {
                         <label style={{ display: 'block', fontSize: '12px', fontWeight: '700', color: '#0f172a', marginBottom: '4px' }}>Subtotal Excl. GST ($) *</label>
                         <input
                           type="number"
+                          min="0.01"
                           step="0.01"
                           placeholder="0.00"
-                          value={quoteData.amountExclGst || selectedJob.contractAmount || ''}
+                          value={quoteData.amountExclGst}
                           onChange={(e) => {
                             const val = e.target.value;
                             const num = parseFloat(val);
-                            setQuoteData({ ...quoteData, amountExclGst: val, amountIncGst: !isNaN(num) ? (num * 1.15).toFixed(2) : '' });
+                            setQuoteData({ ...quoteData, amountExclGst: val, amountIncGst: !isNaN(num) ? (withGstCents(moneyCents(num)) / 100).toFixed(2) : '' });
                           }}
                           style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '2px solid #7c3aed', borderRadius: '8px', fontSize: '14px', fontWeight: '800', boxSizing: 'border-box' }}
                           required
@@ -2065,11 +2082,11 @@ export default function App() {
                           type="number"
                           step="0.01"
                           placeholder="0.00"
-                          value={quoteData.amountIncGst || (selectedJob.contractAmount ? (selectedJob.contractAmount * 1.15).toFixed(2) : '')}
+                          value={quoteData.amountIncGst}
                           onChange={(e) => {
                             const val = e.target.value;
                             const num = parseFloat(val);
-                            setQuoteData({ ...quoteData, amountIncGst: val, amountExclGst: !isNaN(num) ? (num / 1.15).toFixed(2) : '' });
+                            setQuoteData({ ...quoteData, amountIncGst: val, amountExclGst: !isNaN(num) ? (Math.round(moneyCents(num) * 100 / 115) / 100).toFixed(2) : '' });
                           }}
                           style={{ width: '100%', padding: '9px 12px', background: '#ffffff', border: '2px solid #cbd5e1', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
                         />

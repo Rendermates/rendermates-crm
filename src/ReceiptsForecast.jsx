@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import { buildReceiptsForecast, monthLabel } from './work-finance';
+import { buildReceiptsForecast, monthLabel, withGstCents } from './work-finance';
 
 const name = job => job.clientName || job.name || 'Unnamed job';
 export default function ReceiptsForecast({ jobs, today, onOpenJob }) {
   const [includeGst, setIncludeGst] = useState(true);
   const forecast = buildReceiptsForecast(jobs, today);
-  const displayCents = cents => includeGst ? Math.round(cents * 1.15) : cents;
+  const displayCents = cents => includeGst ? withGstCents(cents) : cents;
   const money = cents => (cents / 100)
     .toLocaleString('en-NZ', { style: 'currency', currency: 'NZD' });
   const amount = cents => money(displayCents(cents));
@@ -47,7 +47,7 @@ export default function ReceiptsForecast({ jobs, today, onOpenJob }) {
       </details>
       <details style={{ marginTop: '20px' }}>
         <summary style={{ fontWeight: '800', cursor: 'pointer' }}>Contract amounts not yet assigned to payment stages ({forecast.unstaged.length} jobs)</summary>
-        <p style={{ fontSize: '12px', color: '#64748b' }}>These balances are not included in monthly totals. Add Deposit, Progress or Final stages and expected dates to forecast them. Extra costs must also be included in a payment stage; they are not counted twice automatically.</p>
+        <p style={{ fontSize: '12px', color: '#64748b' }}>These quote-only balances are not included in monthly totals. Add Deposit, Progress or Final stages and expected dates to forecast them. Extras & Variations are tracked separately and are not added to quote payment stages or forecast totals.</p>
         {forecast.unstaged.map(row => <p key={row.job.id}>{openJob(row.job)} — {amount(row.cents)}</p>)}
       </details>
     </section>

@@ -3,12 +3,37 @@ export const moneyCents = value => {
   return Number.isFinite(number) ? Math.round(number * 100) : 0;
 };
 
-export const jobContractCents = job =>
-  moneyCents(job.contractAmount) + (job.extras || []).reduce((sum, extra) => sum + moneyCents(extra.amount), 0);
+export const jobContractCents = job => moneyCents(job.contractAmount);
 
-export const jobOutstandingCents = job => Math.max(0,
-  jobContractCents(job) - (job.claims || []).filter(claim => claim.status === 'Paid')
-    .reduce((sum, claim) => sum + moneyCents(claim.amount), 0));
+export const jobExtrasCents = job =>
+  (job.extras || []).reduce((sum, extra) => sum + moneyCents(extra.amount), 0);
+
+export function quoteFinancials(job = {}) {
+  const contract = jobContractCents(job);
+  const paid = (job.claims || []).filter(claim => claim.status === 'Paid')
+    .reduce((sum, claim) => sum + moneyCents(claim.amount), 0);
+  const extras = jobExtrasCents(job);
+  const extrasInvoiced = (job.extras || []).filter(extra => extra.invoiced)
+    .reduce((sum, extra) => sum + moneyCents(extra.amount), 0);
+  return {
+    contract, paid, unpaid: Math.max(0, contract - paid), overpaid: Math.max(0, paid - contract),
+    percentPaid: contract > 0 ? paid / contract * 100 : 0,
+    extras, extrasInvoiced, extrasPending: extras - extrasInvoiced,
+  };
+}
+
+export const jobOutstandingCents = job => quoteFinancials(job).unpaid;
+
+export const quoteClaimCents = (job, percentage) => Math.round(jobContractCents(job) * Number(percentage) / 100);
+export const withGstCents = cents => Math.round(cents * 115 / 100);
+export const formatMoney = cents => (cents / 100).toLocaleString('en-NZ', { style: 'currency', currency: 'NZD' });
+
+export function claimQuoteDifferenceCents(job, claim) {
+  if (claim.calculationMode === 'fixed' || !(Number(claim.percentage) > 0) || jobContractCents(job) <= 0) return 0;
+  const difference = moneyCents(claim.amount) - quoteClaimCents(job, claim.percentage);
+  // Older fixed-amount entries stored only a percentage rounded to one decimal.
+  return Math.abs(difference) > Math.max(1, Math.ceil(jobContractCents(job) * 0.0005)) ? difference : 0;
+}
 
 export function isDateKey(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value || '')) return false;
