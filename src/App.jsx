@@ -1887,6 +1887,25 @@ export default function App() {
                     </tbody>
                   </table>
                 </div>
+                <section aria-label="Xero quote remaining to receive" style={{
+                  marginTop: '18px', padding: '20px', border: '1px solid #bae6fd',
+                  borderRadius: '12px', background: '#f0f9ff', color: '#0c4a6e'
+                }}>
+                  <h3 style={{ margin: '0 0 12px', fontSize: '16px', fontWeight: '800' }}>Remaining to receive — Xero quote</h3>
+                  {finance.contract > 0 ? <>
+                    <div style={{ display: 'flex', gap: '24px', alignItems: 'baseline', flexWrap: 'wrap' }}>
+                      <div><strong style={{ fontSize: '28px' }}>{formatMoney(finance.unpaid)}</strong> <span style={{ fontSize: '13px' }}>excl. GST</span></div>
+                      <div style={{ fontSize: '15px' }}><strong>{formatMoney(withGstCents(finance.unpaid))}</strong> incl. 15% GST</div>
+                    </div>
+                    <p style={{ margin: '10px 0 0', fontSize: '13px', lineHeight: 1.6 }}>
+                      Quote: {formatMoney(finance.contract)} − paid stages: {formatMoney(finance.paid)} (excl. GST).
+                      {' '}Includes quote amounts not yet assigned to a stage. Extras & Variations are excluded.
+                    </p>
+                    {finance.overpaid > 0 && <p role="alert" style={{ margin: '10px 0 0', fontSize: '13px', color: '#92400e' }}>
+                      Recorded payments exceed the quote by {formatMoney(finance.overpaid)}. Check the saved stages against the invoices; the amounts have not been changed.
+                    </p>}
+                  </> : <p style={{ margin: 0, fontSize: '13px' }}>Set the Xero quote amount to calculate how much remains to receive. Extras & Variations are excluded.</p>}
+                </section>
               </div>
             )}
 
