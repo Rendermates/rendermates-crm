@@ -3,6 +3,7 @@ import { getCalendarDateHighlights } from './calendar-date';
 import WorkGroup from './WorkGroup';
 import ReceiptsForecast from './ReceiptsForecast';
 import ClaimDates from './ClaimDates';
+import BackCost from './BackCost';
 import CalendarSyncNotice from './CalendarSyncNotice';
 import CRMWorkspace, { LostDealDialog, TaskReminderStrip } from './CRMWorkspace';
 import WebsiteEnquiry from './WebsiteEnquiry';
@@ -1520,6 +1521,18 @@ export default function App() {
               <Layers size={16} /> Extras & Variations ({selectedJob.extras?.length || 0})
             </button>
             <button
+              onClick={() => setActiveTab('back_cost')}
+              style={{
+                padding: '12px 20px', background: 'none', border: 'none',
+                borderBottom: activeTab === 'back_cost' ? '3px solid #0284c7' : '3px solid transparent',
+                color: activeTab === 'back_cost' ? '#0284c7' : '#64748b',
+                fontWeight: '800', fontSize: '14px', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', gap: '8px'
+              }}
+            >
+              <DollarSign size={16} /> Back Cost ({selectedJob.backCosts?.length || 0})
+            </button>
+            <button
               onClick={() => setActiveTab('quote')}
               style={{
                 padding: '12px 20px',
@@ -2032,6 +2045,8 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {activeTab === 'back_cost' && <BackCost key={selectedJob.id} job={selectedJob} />}
 
             {activeTab === 'quote' && (
               <div>
